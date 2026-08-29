@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.db import close_client, ensure_indexes, ping_mongo
+from app.core.health import check_chain, check_storage
 from app.core.logging import JSONLoggingMiddleware
 
 settings = get_settings()
@@ -32,10 +33,14 @@ app.add_middleware(
 @app.get("/api/v1/health")
 async def health() -> dict:
     mongo_ok = await ping_mongo()
+    storage_ok = await check_storage(settings.STORAGE_ENDPOINT)
+    # Hardhat node isn't implemented until Phase 5, so an unreachable chain
+    # node is expected pre-Phase-5 and reported as "degraded", not an error.
+    chain_ok = await check_chain(settings.CHAIN_RPC_URL)
+
     return {
-        "status": "ok" if mongo_ok else "degraded",
+        "status": "ok" if mongo_ok and storage_ok else "degraded",
         "mongo": "reachable" if mongo_ok else "unreachable",
-        # storage/blockchain clients aren't wired up until Phases 4/5.
-        "storage": "not_configured",
-        "chain": "not_configured",
+        "storage": "reachable" if storage_ok else "unreachable",
+        "chain": "reachable" if chain_ok else "degraded",
     }

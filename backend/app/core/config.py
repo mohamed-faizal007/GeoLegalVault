@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     CONTRACT_ADDRESS: str = "0xCHANGE_ME"
     CHAIN_ID: int = 11155111
     ANCHOR_CONFIRMATIONS: int = 1
+    # Local dev node used only for /health reachability probing (Phase 5 adds
+    # real Hardhat + anchoring). Distinct from SEPOLIA_RPC_URL, the real testnet RPC.
+    CHAIN_RPC_URL: str = "http://localhost:8545"
 
     # --- Geofence ---
     GEO_ACCURACY_MAX_M: int = 100

@@ -64,11 +64,19 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      # Override host-oriented values from .env: inside the compose network,
+      # the backend must reach sibling containers by service name, not localhost.
+      MONGODB_URI: mongodb://mongo:27017
+      STORAGE_ENDPOINT: http://minio:9000
+      CHAIN_RPC_URL: http://hardhat-node:8545
     depends_on:
       mongo:
         condition: service_healthy
       minio:
         condition: service_healthy
+      hardhat-node:
+        condition: service_started
     volumes:
       - ./backend/app:/app/app
 
