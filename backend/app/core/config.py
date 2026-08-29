@@ -6,15 +6,23 @@ startup so the app fails fast instead of running with insecure defaults.
 """
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PLACEHOLDER_VALUES = {"change_me", "0xCHANGE_ME", ""}
 
+# Absolute path to the repo-root .env — not a bare ".env", which resolves
+# relative to the process's current working directory and silently finds
+# nothing (falling back to placeholder field defaults) unless you happen to
+# launch from the repo root. Inside Docker this file doesn't exist at all;
+# that's fine, docker-compose's env_file: already injects real env vars.
+_REPO_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_REPO_ROOT_ENV, extra="ignore")
 
     # --- Backend ---
     APP_ENV: str = "development"
