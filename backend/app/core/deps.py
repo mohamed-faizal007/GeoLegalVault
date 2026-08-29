@@ -1,6 +1,7 @@
-"""Shared FastAPI dependencies: current-user extraction and a minimal role
-guard. Phase 2 replaces the role guard with the full permission-string RBAC
-dependency (`require(permission)`); this stays deliberately small until then.
+"""Shared FastAPI dependencies: current-user extraction.
+
+Permission enforcement (deny-by-default RBAC) lives in `core/rbac.py`'s
+`require(permission)` dependency, which builds on `get_current_user` below.
 """
 
 from typing import Annotated
@@ -11,7 +12,6 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.db import get_db
 from app.core.security import TokenError, TokenType, verify_token
-from app.modules.users.models import Role
 from app.modules.users.service import get_user_by_id
 
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -41,19 +41,3 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
-
-
-def require_role(*allowed: Role):
-    """Minimal role gate for Phase 1 (Admin-only user-management endpoints).
-
-    Role is read from the freshly-loaded DB user (via get_current_user), not
-    blindly trusted from the JWT payload, per the threat-model requirement
-    that sensitive ops re-derive role server-side.
-    """
-
-    def _dependency(user: CurrentUser) -> dict:
-        if user["role"] not in {role.value for role in allowed}:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Insufficient role")
-        return user
-
-    return _dependency

@@ -6,21 +6,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.db import get_db
-from app.core.deps import require_role
+from app.core.rbac import USERS_MANAGE, require
 from app.modules.users import service
-from app.modules.users.models import Role
 from app.modules.users.schemas import UserCreate, UserListOut, UserOut, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-_require_admin = require_role(Role.ADMINISTRATOR)
+_require_users_manage = require(USERS_MANAGE)
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def create_user(
     payload: UserCreate,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _admin: Annotated[dict, Depends(_require_admin)],
+    _actor: Annotated[dict, Depends(_require_users_manage)],
 ) -> UserOut:
     try:
         return await service.create_user(db, payload)
@@ -31,7 +30,7 @@ async def create_user(
 @router.get("", response_model=UserListOut)
 async def list_users(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _admin: Annotated[dict, Depends(_require_admin)],
+    _actor: Annotated[dict, Depends(_require_users_manage)],
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> UserListOut:
@@ -44,7 +43,7 @@ async def update_user(
     user_id: str,
     payload: UserUpdate,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _admin: Annotated[dict, Depends(_require_admin)],
+    _actor: Annotated[dict, Depends(_require_users_manage)],
 ) -> UserOut:
     try:
         return await service.update_user(db, user_id, payload)
