@@ -38,9 +38,12 @@ async def ping_mongo() -> bool:
 
 
 async def ensure_indexes() -> None:
-    """Create/verify indexes on startup. Extended in later phases as
-    collections (users, documents, geofences, ...) are introduced."""
-    return None
+    """Create/verify indexes on startup. Extended in later phases as more
+    collections (documents, geofences, ...) are introduced."""
+    db = get_database()
+    await db["users"].create_index("email", unique=True)
+    await db["refresh_sessions"].create_index("jti", unique=True)
+    await db["refresh_sessions"].create_index("family")
 
 
 async def close_client() -> None:

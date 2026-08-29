@@ -7,6 +7,8 @@ from app.core.config import get_settings
 from app.core.db import close_client, ensure_indexes, ping_mongo
 from app.core.health import check_chain, check_storage
 from app.core.logging import JSONLoggingMiddleware
+from app.modules.auth.router import router as auth_router
+from app.modules.users.router import router as users_router
 
 settings = get_settings()
 
@@ -28,6 +30,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(users_router, prefix="/api/v1")
 
 
 @app.get("/api/v1/health")

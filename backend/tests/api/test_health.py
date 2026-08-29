@@ -4,7 +4,7 @@ import pytest
 from app.main import app
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_health_endpoint_responds_with_expected_shape():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

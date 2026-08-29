@@ -14,3 +14,8 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# One event loop for the whole session: the app's Motor client is a
+# process-lifetime singleton (as it is in production, under uvicorn's one
+# loop), so tests must share a single loop too or Motor raises "attached to
+# a different loop" the moment a second per-test loop touches it.
+asyncio_default_fixture_loop_scope = "session"

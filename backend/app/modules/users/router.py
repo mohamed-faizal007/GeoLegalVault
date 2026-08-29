@@ -1,1 +1,52 @@
-"""users module router — implemented in a later phase."""
+"""users module router — Admin-provisioned user management."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from app.core.db import get_db
+from app.core.deps import require_role
+from app.modules.users import service
+from app.modules.users.models import Role
+from app.modules.users.schemas import UserCreate, UserListOut, UserOut, UserUpdate
+
+router = APIRouter(prefix="/users", tags=["users"])
+
+_require_admin = require_role(Role.ADMINISTRATOR)
+
+
+@router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    payload: UserCreate,
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
+    _admin: Annotated[dict, Depends(_require_admin)],
+) -> UserOut:
+    try:
+        return await service.create_user(db, payload)
+    except service.EmailAlreadyExists as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Email already registered") from exc
+
+
+@router.get("", response_model=UserListOut)
+async def list_users(
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
+    _admin: Annotated[dict, Depends(_require_admin)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> UserListOut:
+    items, total = await service.list_users(db, page, limit)
+    return UserListOut(items=items, page=page, limit=limit, total=total)
+
+
+@router.patch("/{user_id}", response_model=UserOut)
+async def update_user(
+    user_id: str,
+    payload: UserUpdate,
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
+    _admin: Annotated[dict, Depends(_require_admin)],
+) -> UserOut:
+    try:
+        return await service.update_user(db, user_id, payload)
+    except service.UserNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="User not found") from exc
