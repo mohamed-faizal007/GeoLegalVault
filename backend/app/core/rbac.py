@@ -3,6 +3,7 @@ Part 3), the `require(permission)` dependency, and the maker≠checker helper.
 """
 
 from app.core.deps import CurrentUser
+from app.core.errors import AppError
 from app.modules.users.models import Role
 
 # --- Permission strings -----------------------------------------------------
@@ -54,15 +55,8 @@ ROLE_PERMISSIONS: dict[Role, frozenset[str]] = {
 }
 
 
-class RBACError(Exception):
-    """Carries an error `code` so the API layer can render
-    `{"error": {"code": ..., "message": ...}}` per the Part 15 error envelope.
-    """
-
-    def __init__(self, code: str, message: str):
-        self.code = code
-        self.message = message
-        super().__init__(message)
+class RBACError(AppError):
+    status_code = 403
 
 
 def has_permission(role: str, permission: str) -> bool:

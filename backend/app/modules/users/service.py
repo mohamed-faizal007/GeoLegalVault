@@ -93,16 +93,3 @@ async def record_login(db: AsyncIOMotorDatabase, user_id: ObjectId) -> None:
     await db[USERS_COLLECTION].update_one(
         {"_id": user_id}, {"$set": {"last_login": datetime.now(UTC)}}
     )
-
-
-async def create_admin(
-    db: AsyncIOMotorDatabase, email: str, password: str, name: str = "Administrator"
-) -> UserOut:
-    """Used by scripts/seed.py to provision the first admin account."""
-    existing = await get_user_by_email(db, email)
-    if existing is not None:
-        raise EmailAlreadyExists(email)
-    return await create_user(
-        db,
-        UserCreate(email=email, password=password, name=name, role=Role.ADMINISTRATOR),
-    )

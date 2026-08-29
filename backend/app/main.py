@@ -1,15 +1,15 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.db import close_client, ensure_indexes, ping_mongo
+from app.core.errors import register_exception_handlers
 from app.core.health import check_chain, check_storage
 from app.core.logging import JSONLoggingMiddleware
-from app.core.rbac import RBACError
 from app.modules.auth.router import router as auth_router
+from app.modules.geofences.router import router as geofences_router
 from app.modules.users.router import router as users_router
 
 settings = get_settings()
@@ -35,14 +35,9 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
+app.include_router(geofences_router, prefix="/api/v1")
 
-
-@app.exception_handler(RBACError)
-async def rbac_error_handler(_request: Request, exc: RBACError) -> JSONResponse:
-    return JSONResponse(
-        status_code=403,
-        content={"error": {"code": exc.code, "message": exc.message}},
-    )
+register_exception_handlers(app)
 
 
 @app.get("/api/v1/health")
