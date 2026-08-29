@@ -9,6 +9,7 @@ from app.core.errors import register_exception_handlers
 from app.core.health import check_chain, check_storage
 from app.core.logging import JSONLoggingMiddleware
 from app.modules.auth.router import router as auth_router
+from app.modules.blockchain.router import router as blockchain_router
 from app.modules.documents.router import router as documents_router
 from app.modules.geofences.router import router as geofences_router
 from app.modules.users.router import router as users_router
@@ -40,6 +41,7 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(geofences_router, prefix="/api/v1")
 app.include_router(documents_router, prefix="/api/v1")
 app.include_router(versions_router, prefix="/api/v1")
+app.include_router(blockchain_router, prefix="/api/v1")
 
 register_exception_handlers(app)
 

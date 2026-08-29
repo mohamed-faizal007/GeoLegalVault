@@ -48,12 +48,15 @@ services:
       mc anonymous set none local/$$STORAGE_BUCKET
       "
 
-  # Placeholder for the local Hardhat node. Implemented in Phase 5
-  # (contracts/hardhat.config.ts + `npx hardhat node`). Kept here now
-  # only so the compose topology matches the target architecture.
+  # Still a placeholder (kept only so /health has something at 8545 to
+  # probe). The real chain target is Sepolia — see contracts/hardhat.config.ts's
+  # "sepolia" network and DEPLOYMENT steps. Phase 5's contracts/ project can
+  # run a real local node ad hoc via `cd contracts && npx hardhat node` for
+  # dev/testing (that's how tests/integration/test_anchor.py runs), but
+  # nothing here depends on this container being a live chain.
   hardhat-node:
     image: node:20-alpine
-    command: ["sh", "-c", "echo 'hardhat-node: placeholder, implemented in Phase 5' && tail -f /dev/null"]
+    command: ["sh", "-c", "echo 'hardhat-node: placeholder — see contracts/ for the real thing' && tail -f /dev/null"]
     ports:
       - "8545:8545"
 
