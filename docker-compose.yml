@@ -1,0 +1,77 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: creates the dev bucket so the backend has somewhere to write
+  # once storage.py is implemented in Phase 4. Not used by the app yet.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-minioadmin}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-minioadmin}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-geolegalvault-dev}
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 $$STORAGE_ACCESS_KEY $$STORAGE_SECRET_KEY &&
+      mc mb --ignore-existing local/$$STORAGE_BUCKET &&
+      mc anonymous set none local/$$STORAGE_BUCKET
+      "
+
+  # Placeholder for the local Hardhat node. Implemented in Phase 5
+  # (contracts/hardhat.config.ts + `npx hardhat node`). Kept here now
+  # only so the compose topology matches the target architecture.
+  hardhat-node:
+    image: node:20-alpine
+    command: ["sh", "-c", "echo 'hardhat-node: placeholder, implemented in Phase 5' && tail -f /dev/null"]
+    ports:
+      - "8545:8545"
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+
+volumes:
+  mongo_data:
+  minio_data:

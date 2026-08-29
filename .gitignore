@@ -1,0 +1,43 @@
+# Secrets / env
+.env
+.env.*
+!.env.example
+!frontend/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+coverage/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+.tsbuild/
+*.tsbuildinfo
+
+# Contracts (Hardhat)
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+
+# Keys / secrets
+*.key
+*.pem
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Docker volumes (local data, not source)
+mongo_data/
+minio_data/

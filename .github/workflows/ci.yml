@@ -1,0 +1,6 @@
+# CI pipeline (lint, tests, build) — implemented in Phase 11.
+# Placeholder kept here now only so the repo tree matches the target structure (Phase 0).
+name: CI
+
+on:
+  workflow_dispatch: {}
