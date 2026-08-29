@@ -31,7 +31,7 @@ services:
       retries: 10
 
   # One-shot: creates the dev bucket so the backend has somewhere to write
-  # once storage.py is implemented in Phase 4. Not used by the app yet.
+  # (storage.py, Phase 4).
   minio-init:
     image: minio/mc:latest
     depends_on:

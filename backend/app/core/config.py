@@ -26,6 +26,13 @@ class Settings(BaseSettings):
 
     # --- Storage (R2 / S3-compatible; MinIO for local dev) ---
     STORAGE_ENDPOINT: str = "http://localhost:9000"
+    # Endpoint used only when SIGNING pre-signed URLs handed to the client.
+    # In docker-compose the backend must reach MinIO via the service name
+    # (STORAGE_ENDPOINT=http://minio:9000), but a pre-signed URL is fetched
+    # by the browser/host, which can't resolve that name — it needs
+    # localhost:9000. In production both endpoints are the same public R2
+    # URL, so this defaults to STORAGE_ENDPOINT when not set separately.
+    STORAGE_PUBLIC_ENDPOINT: str = "http://localhost:9000"
     STORAGE_REGION: str = "auto"
     STORAGE_BUCKET: str = "geolegalvault-dev"
     STORAGE_ACCESS_KEY: str = "change_me"

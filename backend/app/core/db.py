@@ -39,13 +39,23 @@ async def ping_mongo() -> bool:
 
 async def ensure_indexes() -> None:
     """Create/verify indexes on startup. Extended in later phases as more
-    collections (documents, ...) are introduced."""
+    collections are introduced."""
     db = get_database()
     await db["users"].create_index("email", unique=True)
     await db["refresh_sessions"].create_index("jti", unique=True)
     await db["refresh_sessions"].create_index("family")
     await db["geofences"].create_index([("region", "2dsphere")])
     await db["geofences"].create_index([("center", "2dsphere")])
+
+    await db["documents"].create_index("status")
+    await db["documents"].create_index("owner_id")
+    await db["documents"].create_index([("status", 1), ("doc_type", 1)])
+    await db["documents"].create_index([("title", "text"), ("tags", "text")])
+
+    await db["document_versions"].create_index(
+        [("document_id", 1), ("version_no", 1)], unique=True
+    )
+    await db["document_versions"].create_index("sha256")
 
 
 async def close_client() -> None:
