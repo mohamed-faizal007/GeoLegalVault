@@ -41,3 +41,7 @@ Thumbs.db
 # Docker volumes (local data, not source)
 mongo_data/
 minio_data/
+
+docs/info.md
+
+docs/info.md

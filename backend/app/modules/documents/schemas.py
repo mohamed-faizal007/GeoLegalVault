@@ -1,6 +1,7 @@
 """documents module Pydantic schemas."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -36,6 +37,23 @@ class UploadResponse(BaseModel):
 class DownloadResponse(BaseModel):
     url: str
     expires_in_sec: int
+
+
+class ReviewDecision(BaseModel):
+    decision: Literal["approve", "changes_requested"]
+    comment: str | None = None
+
+
+class AmendRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class TransitionResponse(BaseModel):
+    document_id: str
+    status: str
+    version_id: str | None = None
+    anchor_status: str | None = None
+    tx_hash: str | None = None
 
 
 class DocumentSearchParams(BaseModel):

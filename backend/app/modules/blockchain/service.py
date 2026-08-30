@@ -75,7 +75,11 @@ async def _create_failed_anchor(
         "version_id": version_id,
         "sha256": sha256,
         "event_type": event_type,
-        "tx_hash": None,
+        # tx_hash is omitted entirely, not set to None: the unique+sparse
+        # index on tx_hash only excludes documents where the field is
+        # wholly ABSENT — an explicit null is still indexed and would
+        # collide the moment a version fails to anchor more than once
+        # (e.g. Phase 6's retry-with-backoff on approve).
         "block_number": None,
         "contract_address": settings.CONTRACT_ADDRESS,
         "network": NETWORK,
@@ -86,6 +90,7 @@ async def _create_failed_anchor(
     }
     result = await db[BLOCKCHAIN_ANCHORS_COLLECTION].insert_one(doc)
     doc["_id"] = result.inserted_id
+    doc["tx_hash"] = None
     return doc
 
 

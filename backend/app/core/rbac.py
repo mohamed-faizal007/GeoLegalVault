@@ -10,6 +10,7 @@ from app.modules.users.models import Role
 DOCUMENT_UPLOAD = "document:upload"
 DOCUMENT_VIEW = "document:view"
 DOCUMENT_SEARCH = "document:search"
+DOCUMENT_SUBMIT = "document:submit"
 DOCUMENT_AMEND = "document:amend"
 DOCUMENT_ARCHIVE = "document:archive"
 REVIEW_PERFORM = "review:perform"
@@ -40,7 +41,9 @@ ROLE_PERMISSIONS: dict[Role, frozenset[str]] = {
             DOCUMENT_UPLOAD,
             DOCUMENT_VIEW,
             DOCUMENT_SEARCH,
+            DOCUMENT_SUBMIT,
             DOCUMENT_AMEND,
+            DOCUMENT_ARCHIVE,
             APPROVE_PERFORM,
             VERIFY_PERFORM,
         }
@@ -49,7 +52,14 @@ ROLE_PERMISSIONS: dict[Role, frozenset[str]] = {
         {DOCUMENT_VIEW, DOCUMENT_SEARCH, REVIEW_PERFORM, VERIFY_PERFORM}
     ),
     Role.AUTHORIZED_STAFF: frozenset(
-        {DOCUMENT_UPLOAD, DOCUMENT_VIEW, DOCUMENT_SEARCH, DOCUMENT_AMEND, VERIFY_PERFORM}
+        {
+            DOCUMENT_UPLOAD,
+            DOCUMENT_VIEW,
+            DOCUMENT_SEARCH,
+            DOCUMENT_SUBMIT,
+            DOCUMENT_AMEND,
+            VERIFY_PERFORM,
+        }
     ),
     Role.AUDITOR: frozenset({DOCUMENT_VIEW, DOCUMENT_SEARCH, VERIFY_PERFORM, AUDIT_VIEW}),
 }

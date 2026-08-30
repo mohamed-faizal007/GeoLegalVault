@@ -90,3 +90,45 @@ async def update_status(
     await db[DOCUMENT_VERSIONS_COLLECTION].update_one(
         {"_id": version_id}, {"$set": {"status": status.value}}
     )
+
+
+async def mark_confirmed_anchor(
+    db: AsyncIOMotorDatabase,
+    version_id: ObjectId,
+    *,
+    anchor_id: ObjectId,
+    status: VersionStatus,
+) -> None:
+    """Whitelisted mutation: records the confirmed on-chain anchor on a
+    version. Content/hash/storage_key are still never touched (Guardrail #7)
+    — only the anchor bookkeeping and lifecycle status fields change."""
+    await db[DOCUMENT_VERSIONS_COLLECTION].update_one(
+        {"_id": version_id},
+        {"$set": {"anchored": True, "anchor_id": anchor_id, "status": status.value}},
+    )
+
+
+async def get_latest_version(
+    db: AsyncIOMotorDatabase, document_id: ObjectId
+) -> dict[str, Any] | None:
+    """The version currently moving through the lifecycle pipeline — always
+    the highest version_no. `documents.current_version_id` is different: it
+    only ever points at the version that is presently ACTIVE (live), and is
+    updated solely at final activation (see documents/workflow.py)."""
+    return await db[DOCUMENT_VERSIONS_COLLECTION].find_one(
+        {"document_id": document_id}, sort=[("version_no", -1)]
+    )
+
+
+async def find_active_version_excluding(
+    db: AsyncIOMotorDatabase, document_id: ObjectId, *, exclude_version_id: ObjectId
+) -> dict[str, Any] | None:
+    """The version an amendment supersedes: whichever OTHER version of this
+    document is still ACTIVE when a new version is promoted."""
+    return await db[DOCUMENT_VERSIONS_COLLECTION].find_one(
+        {
+            "document_id": document_id,
+            "status": VersionStatus.ACTIVE.value,
+            "_id": {"$ne": exclude_version_id},
+        }
+    )

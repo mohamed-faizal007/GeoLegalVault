@@ -6,6 +6,7 @@ from app.core.rbac import (
     DOCUMENT_AMEND,
     DOCUMENT_ARCHIVE,
     DOCUMENT_SEARCH,
+    DOCUMENT_SUBMIT,
     DOCUMENT_UPLOAD,
     DOCUMENT_VIEW,
     GEOFENCE_MANAGE,
@@ -21,6 +22,9 @@ from app.modules.users.schemas import UserCreate
 from app.modules.users.service import create_user
 
 # The Part 3 matrix, expressed as the exact permission set each role holds.
+# Part 3 itself has no "Archive" column; Part 5's lifecycle table fills that
+# gap explicitly ("ACTIVE/SUPERSEDED->ARCHIVED | Admin/Legal Officer"), and
+# Phase 6 wires DOCUMENT_SUBMIT for the two owner-capable/upload roles.
 EXPECTED_PERMISSIONS = {
     Role.ADMINISTRATOR: {
         DOCUMENT_VIEW,
@@ -35,7 +39,9 @@ EXPECTED_PERMISSIONS = {
         DOCUMENT_UPLOAD,
         DOCUMENT_VIEW,
         DOCUMENT_SEARCH,
+        DOCUMENT_SUBMIT,
         DOCUMENT_AMEND,
+        DOCUMENT_ARCHIVE,
         APPROVE_PERFORM,
         VERIFY_PERFORM,
     },
@@ -44,6 +50,7 @@ EXPECTED_PERMISSIONS = {
         DOCUMENT_UPLOAD,
         DOCUMENT_VIEW,
         DOCUMENT_SEARCH,
+        DOCUMENT_SUBMIT,
         DOCUMENT_AMEND,
         VERIFY_PERFORM,
     },
@@ -54,6 +61,7 @@ ALL_PERMISSIONS = {
     DOCUMENT_UPLOAD,
     DOCUMENT_VIEW,
     DOCUMENT_SEARCH,
+    DOCUMENT_SUBMIT,
     DOCUMENT_AMEND,
     DOCUMENT_ARCHIVE,
     REVIEW_PERFORM,

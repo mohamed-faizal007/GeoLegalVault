@@ -143,6 +143,7 @@ async def create_document_with_v1(
         "created_at": now,
         "updated_at": now,
         "retention_until": None,
+        "anchor_pending_alert": False,
     }
     await db[DOCUMENTS_COLLECTION].insert_one(document_doc)
 
@@ -216,3 +217,81 @@ async def list_documents(
     items = [doc async for doc in cursor]
     total = await db[DOCUMENTS_COLLECTION].count_documents(filters)
     return items, total
+
+
+async def update_status(
+    db: AsyncIOMotorDatabase, document_id: ObjectId, status: DocumentStatus
+) -> None:
+    """Whitelisted mutation used throughout the lifecycle workflow
+    (documents/workflow.py) — never touches title/owner/tags/etc."""
+    await db[DOCUMENTS_COLLECTION].update_one(
+        {"_id": document_id},
+        {"$set": {"status": status.value, "updated_at": datetime.now(UTC)}},
+    )
+
+
+async def set_current_version(
+    db: AsyncIOMotorDatabase, document_id: ObjectId, version_id: ObjectId
+) -> None:
+    """Repoints the document at whichever version is presently ACTIVE.
+    Called only at final activation (approve -> confirmed -> ACTIVE)."""
+    await db[DOCUMENTS_COLLECTION].update_one(
+        {"_id": document_id},
+        {"$set": {"current_version_id": version_id, "updated_at": datetime.now(UTC)}},
+    )
+
+
+async def set_anchor_alert(db: AsyncIOMotorDatabase, document_id: ObjectId, alert: bool) -> None:
+    """Surfaces (or clears) the "anchor still pending after retries" flag
+    (Plan Part 5's failure column: "keep pending and surface an alert
+    flag"). The document stays usable regardless of this flag's value."""
+    await db[DOCUMENTS_COLLECTION].update_one(
+        {"_id": document_id},
+        {"$set": {"anchor_pending_alert": alert, "updated_at": datetime.now(UTC)}},
+    )
+
+
+async def create_next_version(
+    db: AsyncIOMotorDatabase,
+    *,
+    document: dict[str, Any],
+    actor_id: ObjectId,
+    data: bytes,
+    content_type: str,
+) -> dict[str, Any]:
+    """Amendment upload: creates V(n+1) with prev_version_hash = the current
+    version's sha256. Reuses the exact validate -> store -> hash pipeline
+    from create_document_with_v1; never mutates the version it supersedes
+    (Guardrail #7) — that version is only marked SUPERSEDED, later, once
+    V(n+1) is itself approved and anchored."""
+    validate_upload(data, content_type)
+
+    current_version = await versions_service.get_latest_version(db, document["_id"])
+    if current_version is None:
+        raise DocumentNotFound("document has no version to amend")
+
+    document_id = document["_id"]
+    next_version_no = current_version["version_no"] + 1
+    storage_key = storage.build_version_key(str(document_id), next_version_no)
+
+    try:
+        storage.put_object(data, storage_key, content_type)
+    except Exception as exc:
+        raise StorageUnavailable("could not store the uploaded file") from exc
+
+    sha256 = sha256_bytes(data)
+    version_doc = await versions_service.insert_version(
+        db,
+        document_id=document_id,
+        version_no=next_version_no,
+        sha256=sha256,
+        prev_version_hash=current_version["sha256"],
+        storage_key=storage_key,
+        size_bytes=len(data),
+        mime=content_type,
+        uploaded_by=actor_id,
+    )
+
+    await update_status(db, document_id, DocumentStatus.DRAFT)
+    updated_document = await get_document_by_id(db, str(document_id))
+    return {"document": updated_document, "version": version_doc}

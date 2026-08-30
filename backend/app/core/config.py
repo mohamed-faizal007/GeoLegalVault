@@ -57,6 +57,15 @@ class Settings(BaseSettings):
     # Local dev node used only for /health reachability probing (Phase 5 adds
     # real Hardhat + anchoring). Distinct from SEPOLIA_RPC_URL, the real testnet RPC.
     CHAIN_RPC_URL: str = "http://localhost:8545"
+    # Approval-time anchoring (Phase 6): how many times to retry sending the
+    # anchor tx if it fails outright (RPC down/etc.), and how long to poll
+    # for a synchronous confirmation before leaving the anchor PENDING for a
+    # later retry/worker pass. The document stays APPROVED (pending anchor)
+    # and the app stays usable throughout — see Plan Part 12's failure table.
+    ANCHOR_MAX_ATTEMPTS: int = 3
+    ANCHOR_RETRY_BACKOFF_SEC: float = 1.0
+    ANCHOR_CONFIRM_POLL_ATTEMPTS: int = 5
+    ANCHOR_CONFIRM_POLL_INTERVAL_SEC: float = 0.3
 
     # --- Geofence ---
     GEO_ACCURACY_MAX_M: int = 100
