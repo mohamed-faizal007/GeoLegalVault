@@ -198,6 +198,12 @@ async def list_documents(
         filters["$text"] = {"$search": query}
     if status:
         filters["status"] = status
+    else:
+        # Archived documents are retained forever (versions + anchors
+        # untouched) but hidden from the default repository view — they're
+        # still reachable by explicitly filtering on status=ARCHIVED
+        # (Plan Part 16 / Phase 10: "hides from default view but retains").
+        filters["status"] = {"$ne": DocumentStatus.ARCHIVED.value}
     if doc_type:
         filters["doc_type"] = doc_type
     if owner_id:

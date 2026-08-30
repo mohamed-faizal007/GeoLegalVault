@@ -2,9 +2,10 @@ import { useState } from "react";
 
 import GeofenceManagementPanel from "../components/admin/GeofenceManagementPanel";
 import HealthPanel from "../components/admin/HealthPanel";
+import ReportsPanel from "../components/admin/ReportsPanel";
 import UserManagementPanel from "../components/admin/UserManagementPanel";
 
-const TABS = ["Users", "Geofences", "System Health"] as const;
+const TABS = ["Users", "Geofences", "Reports", "System Health"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function AdminPanel() {
@@ -33,6 +34,7 @@ export default function AdminPanel() {
 
       {tab === "Users" && <UserManagementPanel />}
       {tab === "Geofences" && <GeofenceManagementPanel />}
+      {tab === "Reports" && <ReportsPanel />}
       {tab === "System Health" && <HealthPanel />}
     </div>
   );

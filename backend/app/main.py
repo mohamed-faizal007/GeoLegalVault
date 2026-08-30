@@ -14,6 +14,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.blockchain.router import router as blockchain_router
 from app.modules.documents.router import router as documents_router
 from app.modules.geofences.router import router as geofences_router
+from app.modules.reports.router import router as reports_router
 from app.modules.users.router import router as users_router
 from app.modules.verify.router import router as verify_router
 from app.modules.versions.router import router as versions_router
@@ -48,6 +49,7 @@ app.include_router(versions_router, prefix="/api/v1")
 app.include_router(blockchain_router, prefix="/api/v1")
 app.include_router(verify_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
+app.include_router(reports_router, prefix="/api/v1")
 
 register_exception_handlers(app)
 
