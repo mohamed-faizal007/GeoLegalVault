@@ -18,6 +18,7 @@ class DocumentOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     retention_until: datetime | None = None
+    integrity_flag: str | None = None
 
 
 class DocumentListOut(BaseModel):

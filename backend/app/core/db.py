@@ -62,6 +62,8 @@ async def ensure_indexes() -> None:
     await db["blockchain_anchors"].create_index("tx_hash", unique=True, sparse=True)
     await db["blockchain_anchors"].create_index("version_id")
 
+    await db["verification_records"].create_index([("version_id", 1), ("created_at", -1)])
+
 
 async def close_client() -> None:
     global _client

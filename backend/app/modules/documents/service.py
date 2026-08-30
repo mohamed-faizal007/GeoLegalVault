@@ -104,6 +104,7 @@ def to_out(doc: dict[str, Any]) -> DocumentOut:
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
         retention_until=doc.get("retention_until"),
+        integrity_flag=doc.get("integrity_flag"),
     )
 
 
@@ -144,6 +145,7 @@ async def create_document_with_v1(
         "updated_at": now,
         "retention_until": None,
         "anchor_pending_alert": False,
+        "integrity_flag": None,
     }
     await db[DOCUMENTS_COLLECTION].insert_one(document_doc)
 
@@ -248,6 +250,18 @@ async def set_anchor_alert(db: AsyncIOMotorDatabase, document_id: ObjectId, aler
     await db[DOCUMENTS_COLLECTION].update_one(
         {"_id": document_id},
         {"$set": {"anchor_pending_alert": alert, "updated_at": datetime.now(UTC)}},
+    )
+
+
+async def set_integrity_flag(
+    db: AsyncIOMotorDatabase, document_id: ObjectId, flag: str | None
+) -> None:
+    """Set by the verification loop (Phase 7) the moment a MISMATCH is
+    detected — never cleared automatically; only an operator investigating
+    the document clears it by hand."""
+    await db[DOCUMENTS_COLLECTION].update_one(
+        {"_id": document_id},
+        {"$set": {"integrity_flag": flag, "updated_at": datetime.now(UTC)}},
     )
 
 
