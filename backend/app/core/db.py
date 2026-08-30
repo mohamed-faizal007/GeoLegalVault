@@ -64,6 +64,13 @@ async def ensure_indexes() -> None:
 
     await db["verification_records"].create_index([("version_id", 1), ("created_at", -1)])
 
+    await db["audit_logs"].create_index([("actor_id", 1), ("created_at", -1)])
+    await db["audit_logs"].create_index("action")
+    # location is only ever set on geofence-denial records (see
+    # app.modules.audit.service.record); the key is never written as null,
+    # so this behaves as a sparse index without needing sparse=True.
+    await db["audit_logs"].create_index([("location", "2dsphere")])
+
 
 async def close_client() -> None:
     global _client

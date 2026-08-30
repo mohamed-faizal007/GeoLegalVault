@@ -22,6 +22,7 @@ amendment's in-review V(n+1) never displaces the still-live V(n) mid-review.
 """
 
 import asyncio
+import logging
 from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -37,6 +38,8 @@ from app.modules.documents.models import DocumentStatus
 from app.modules.versions import service as versions_service
 from app.modules.versions.models import VersionStatus
 from app.services import blockchain as chain
+
+_logger = logging.getLogger(__name__)
 
 
 class IllegalTransition(AppError):
@@ -254,6 +257,10 @@ async def approve(
         # later retry (the optional worker, or a manual re-run) can pick it
         # up without disturbing anything already committed above.
         await documents_service.set_anchor_alert(db, document_id, True)
+        _logger.warning(
+            "workflow: ANCHOR_FAIL — tx could not be sent",
+            extra={"document_id": str(document_id), "error": anchor_doc.get("error")},
+        )
         await audit.record(
             actor_id=actor["_id"],
             action="ANCHOR_FAIL",
@@ -283,6 +290,10 @@ async def approve(
     if receipt["status"] != 1:
         await blockchain_service.mark_failed(db, anchor_doc["_id"], "transaction reverted")
         await documents_service.set_anchor_alert(db, document_id, True)
+        _logger.warning(
+            "workflow: ANCHOR_FAIL — transaction reverted",
+            extra={"document_id": str(document_id), "tx_hash": anchor_doc.get("tx_hash")},
+        )
         await audit.record(
             actor_id=actor["_id"],
             action="ANCHOR_FAIL",

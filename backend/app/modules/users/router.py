@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.db import get_db
 from app.core.rbac import USERS_MANAGE, require
+from app.modules.audit import service as audit
 from app.modules.users import service
 from app.modules.users.schemas import UserCreate, UserListOut, UserOut, UserUpdate
 
@@ -19,12 +20,22 @@ _require_users_manage = require(USERS_MANAGE)
 async def create_user(
     payload: UserCreate,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_users_manage)],
+    actor: Annotated[dict, Depends(_require_users_manage)],
 ) -> UserOut:
     try:
-        return await service.create_user(db, payload)
+        created = await service.create_user(db, payload)
     except service.EmailAlreadyExists as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Email already registered") from exc
+
+    await audit.record(
+        actor_id=actor["_id"],
+        action="USER_CREATE",
+        target_type="user",
+        target_id=created.id,
+        result="SUCCESS",
+        meta={"email": created.email, "role": created.role},
+    )
+    return created
 
 
 @router.get("", response_model=UserListOut)

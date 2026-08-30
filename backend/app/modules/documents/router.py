@@ -3,7 +3,17 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.config import get_settings
@@ -20,6 +30,7 @@ from app.core.rbac import (
     has_permission,
     require,
 )
+from app.modules.audit import service as audit
 from app.modules.documents import service, workflow
 from app.modules.documents.models import DocumentStatus
 from app.modules.documents.schemas import (
@@ -59,6 +70,7 @@ async def _get_document_or_404(db: AsyncIOMotorDatabase, document_id: str) -> di
 
 @router.post("", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
+    request: Request,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
     user: Annotated[dict, Depends(_require_upload)],
     _fence: Annotated[dict, Depends(_require_upload_geofence)],
@@ -104,6 +116,19 @@ async def upload_document(
     finally:
         await file.close()
 
+    await audit.record(
+        actor_id=user["_id"],
+        action="UPLOAD",
+        target_type="document",
+        target_id=result["document"]["_id"],
+        result="SUCCESS",
+        ip=request.client.host if request.client else None,
+        meta={
+            "version_id": str(result["version"]["_id"]),
+            "version_no": result["version"]["version_no"],
+            "amend": bool(amend_of),
+        },
+    )
     return UploadResponse(
         document_id=str(result["document"]["_id"]),
         version_id=str(result["version"]["_id"]),
@@ -154,8 +179,9 @@ async def get_document(
 @router.get("/{document_id}/download", response_model=DownloadResponse)
 async def download_document(
     document_id: str,
+    request: Request,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_view)],
+    actor: Annotated[dict, Depends(_require_view)],
     _fence: Annotated[dict, Depends(_require_download_geofence)],
 ) -> DownloadResponse:
     doc = await _get_document_or_404(db, document_id)
@@ -170,6 +196,15 @@ async def download_document(
 
     settings = get_settings()
     url = generate_presigned_get(version["storage_key"])
+    await audit.record(
+        actor_id=actor["_id"],
+        action="ACCESS",
+        target_type="document",
+        target_id=doc["_id"],
+        result="SUCCESS",
+        ip=request.client.host if request.client else None,
+        meta={"version_id": str(version["_id"])},
+    )
     return DownloadResponse(url=url, expires_in_sec=settings.STORAGE_PRESIGN_TTL_SEC)
 
 

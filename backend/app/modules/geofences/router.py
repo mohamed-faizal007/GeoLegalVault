@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.db import get_db
 from app.core.rbac import GEOFENCE_MANAGE, require
+from app.modules.audit import service as audit
 from app.modules.geofences import service
 from app.modules.geofences.schemas import (
     GeofenceCreate,
@@ -24,9 +25,18 @@ _require_geofence_manage = require(GEOFENCE_MANAGE)
 async def create_geofence(
     payload: GeofenceCreate,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_geofence_manage)],
+    actor: Annotated[dict, Depends(_require_geofence_manage)],
 ) -> GeofenceOut:
-    return await service.create_geofence(db, payload)
+    created = await service.create_geofence(db, payload)
+    await audit.record(
+        actor_id=actor["_id"],
+        action="GEOFENCE_CREATE",
+        target_type="geofence",
+        target_id=created.id,
+        result="SUCCESS",
+        meta={"name": created.name},
+    )
+    return created
 
 
 @router.get("", response_model=GeofenceListOut)

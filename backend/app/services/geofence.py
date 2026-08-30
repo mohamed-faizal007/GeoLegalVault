@@ -6,6 +6,7 @@ control, not a security guarantee — browser GPS is spoofable (DevTools
 sensors, fake-GPS apps, payload tampering before it reaches the server).
 """
 
+import logging
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -19,7 +20,10 @@ from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.deps import CurrentUser
 from app.core.errors import AppError
+from app.modules.audit import service as audit
 from app.modules.geofences.models import GEOFENCES_COLLECTION
+
+_logger = logging.getLogger(__name__)
 
 
 class LocationInput(BaseModel):
@@ -78,12 +82,19 @@ async def check_location(
     lng: float,
     accuracy_m: float,
     client_ts: float,
+    *,
+    ip: str | None = None,
 ) -> dict[str, Any]:
     """Fail-closed on poor accuracy or a stale reading, then run the real
     point-in-polygon query. Never trust a client-supplied allow/deny flag."""
     settings = get_settings()
+    point = {"type": "Point", "coordinates": [lng, lat]}
 
     if accuracy_m > settings.GEO_ACCURACY_MAX_M:
+        _logger.warning(
+            "geofence: LOCATION_LOW_CONFIDENCE",
+            extra={"user_id": str(user.get("_id")), "accuracy_m": accuracy_m, "ip": ip},
+        )
         raise LocationLowConfidence(
             f"location accuracy {accuracy_m:.0f}m exceeds the "
             f"{settings.GEO_ACCURACY_MAX_M}m maximum"
@@ -92,6 +103,10 @@ async def check_location(
     now = datetime.now(UTC).timestamp()
     age_sec = now - client_ts
     if age_sec > settings.GEO_FRESHNESS_MAX_SEC:
+        _logger.warning(
+            "geofence: LOCATION_STALE",
+            extra={"user_id": str(user.get("_id")), "age_sec": age_sec, "ip": ip},
+        )
         raise LocationStale(
             f"location is {age_sec:.0f}s old (max {settings.GEO_FRESHNESS_MAX_SEC}s)"
         )
@@ -109,13 +124,26 @@ async def check_location(
             {
                 "_id": {"$in": object_ids},
                 "active": True,
-                "region": {
-                    "$geoIntersects": {"$geometry": {"type": "Point", "coordinates": [lng, lat]}}
-                },
+                "region": {"$geoIntersects": {"$geometry": point}},
             }
         )
 
     if fence is None:
+        actor_id = user.get("_id")
+        _logger.warning(
+            "geofence: GEOFENCE_DENIED",
+            extra={"user_id": str(actor_id), "lat": lat, "lng": lng, "ip": ip},
+        )
+        await audit.record(
+            actor_id=actor_id,
+            action="GEOFENCE_DENIED",
+            target_type="user",
+            target_id=actor_id,
+            result="DENIED",
+            ip=ip,
+            location=point,
+            meta={"accuracy_m": accuracy_m},
+        )
         raise GeofenceDenied("current location is outside all geofences assigned to this user")
     return fence
 
@@ -164,8 +192,15 @@ def require_geofence(context: str = "sensitive_operation"):
         except ValidationError as exc:
             raise InvalidLocation(f"invalid location data for {context}: {exc}") from exc
 
+        ip = request.client.host if request.client else None
         return await check_location(
-            db, user, location.lat, location.lng, location.accuracy, location.timestamp
+            db,
+            user,
+            location.lat,
+            location.lng,
+            location.accuracy,
+            location.timestamp,
+            ip=ip,
         )
 
     return _dependency

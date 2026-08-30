@@ -5,6 +5,7 @@ prototype target; a distributed deployment would need a shared store like
 Redis instead).
 """
 
+import logging
 import time
 import uuid
 from collections import defaultdict
@@ -21,8 +22,11 @@ from app.core.security import (
     verify_password,
     verify_token,
 )
+from app.modules.audit import service as audit
 from app.modules.auth import models as sessions
 from app.modules.users import service as users_service
+
+_logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 5
 _WINDOW_SEC = 60.0
@@ -79,23 +83,63 @@ async def _issue_session(db: AsyncIOMotorDatabase, user: dict) -> tuple[str, str
     return access_token, refresh_token
 
 
-async def login(db: AsyncIOMotorDatabase, email: str, password: str) -> tuple[dict, str, str]:
+async def login(
+    db: AsyncIOMotorDatabase, email: str, password: str, *, ip: str | None = None
+) -> tuple[dict, str, str]:
     """Returns (user_doc, access_token, refresh_token). Raises on failure."""
     email = email.lower()
-    _check_rate_limit(email)
+    try:
+        _check_rate_limit(email)
+    except RateLimited:
+        _logger.warning("auth: login rate-limited", extra={"email": email, "ip": ip})
+        await audit.record(
+            actor_id=email,
+            action="LOGIN_FAILURE",
+            target_type="user",
+            target_id=email,
+            result="RATE_LIMITED",
+            ip=ip,
+        )
+        raise
 
     user = await users_service.get_user_by_email(db, email)
     if user is None or not verify_password(password, user["password_hash"]):
         _record_failure(email)
+        _logger.warning("auth: login failed", extra={"email": email, "ip": ip})
+        await audit.record(
+            actor_id=email,
+            action="LOGIN_FAILURE",
+            target_type="user",
+            target_id=email,
+            result="INVALID_CREDENTIALS",
+            ip=ip,
+        )
         raise InvalidCredentials(email)
 
     if not user.get("is_active", False):
+        _logger.warning("auth: login rejected — account disabled", extra={"email": email, "ip": ip})
+        await audit.record(
+            actor_id=user["_id"],
+            action="LOGIN_FAILURE",
+            target_type="user",
+            target_id=user["_id"],
+            result="ACCOUNT_DISABLED",
+            ip=ip,
+        )
         raise AccountDisabled(email)
 
     _reset_failures(email)
     await users_service.record_login(db, user["_id"])
 
     access_token, refresh_token = await _issue_session(db, user)
+    await audit.record(
+        actor_id=user["_id"],
+        action="LOGIN_SUCCESS",
+        target_type="user",
+        target_id=user["_id"],
+        result="SUCCESS",
+        ip=ip,
+    )
     return user, access_token, refresh_token
 
 

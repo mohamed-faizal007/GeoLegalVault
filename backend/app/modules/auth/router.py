@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.config import get_settings
@@ -37,12 +37,14 @@ def _clear_refresh_cookie(response: Response) -> None:
 async def login(
     payload: LoginRequest,
     response: Response,
+    request: Request,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
 ) -> AccessTokenResponse:
     settings = get_settings()
+    ip = request.client.host if request.client else None
     try:
         _user, access_token, refresh_token = await service.login(
-            db, payload.email, payload.password
+            db, payload.email, payload.password, ip=ip
         )
     except (service.InvalidCredentials, service.AccountDisabled, service.RateLimited) as exc:
         # Same generic message for all failure modes: no user enumeration.

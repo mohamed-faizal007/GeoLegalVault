@@ -30,15 +30,23 @@ class JSONLoggingMiddleware(BaseHTTPMiddleware):
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
 
         response.headers["X-Request-ID"] = request_id
-        logger.info(
-            json.dumps(
-                {
-                    "request_id": request_id,
-                    "method": request.method,
-                    "path": request.url.path,
-                    "status": response.status_code,
-                    "duration_ms": duration_ms,
-                }
-            )
+        payload = json.dumps(
+            {
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "duration_ms": duration_ms,
+            }
         )
+        # 4xx covers the security-relevant denials (auth failures, RBAC
+        # FORBIDDEN, GEOFENCE_DENIED, bad uploads); 5xx is a hard failure
+        # (e.g. storage/chain unreachable). Both get flagged above the
+        # normal per-request INFO line so they're easy to alert on.
+        if response.status_code >= 500:
+            logger.error(payload)
+        elif response.status_code >= 400:
+            logger.warning(payload)
+        else:
+            logger.info(payload)
         return response
