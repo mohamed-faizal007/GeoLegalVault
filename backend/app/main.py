@@ -8,6 +8,8 @@ from app.core.db import close_client, ensure_indexes, ping_mongo
 from app.core.errors import register_exception_handlers
 from app.core.health import check_chain, check_storage
 from app.core.logging import JSONLoggingMiddleware
+from app.core.rate_limit import RateLimitMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.sentry import init_sentry
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
@@ -33,6 +35,9 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="GeoLegalVault API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(JSONLoggingMiddleware)
+if settings.RATE_LIMIT_ENABLED:
+    app.add_middleware(RateLimitMiddleware, requests_per_min=settings.RATE_LIMIT_PER_MIN)
+app.add_middleware(SecurityHeadersMiddleware, hsts=settings.APP_ENV != "development")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,

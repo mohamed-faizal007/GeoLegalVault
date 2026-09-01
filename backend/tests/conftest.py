@@ -8,6 +8,11 @@ they never touch dev data. Every test gets a clean database.
 import os
 
 os.environ.setdefault("MONGODB_DB", "geolegalvault_test")
+# Every request in this test suite shares one ASGI transport with no real
+# client address, so the global rate limiter (app/core/rate_limit.py) would
+# otherwise bucket the whole run as a single client and start rejecting
+# unrelated tests once the suite crosses RATE_LIMIT_PER_MIN requests.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import httpx
 import pytest_asyncio

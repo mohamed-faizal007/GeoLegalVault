@@ -3,7 +3,12 @@
 Geospatially-aware document integrity & lifecycle platform. See `docs/GeoLegalVault_Project_Plan.md`
 (architecture) and `docs/IMPLEMENTATION_PROMPT.md` (phase-by-phase build script) for the full design.
 
-Currently implemented: **Phase 0 — scaffolding, environment, health check.**
+All 12 phases are implemented: auth/RBAC, geofence enforcement, storage/hashing/versioning,
+smart-contract anchoring on Sepolia, the full lifecycle workflow, the 3-way tamper-detection
+verification loop, audit logging, the full frontend, admin/reporting, a 118-test suite with CI,
+and deployment docs. See `docs/` for the full documentation set — start with `docs/SRS.md` (what
+it does), `docs/DEMO_SCRIPT.md` (see it work), `docs/DEPLOYMENT.md` (ship it), and
+`docs/DEVELOPER_GUIDE.md` (work on it).
 
 ## Prerequisites
 
@@ -61,9 +66,23 @@ Open http://localhost:5173 — it calls the backend's `/api/v1/health` and rende
 
 ## Project layout
 
-See `docs/IMPLEMENTATION_PROMPT.md` → "TARGET REPOSITORY STRUCTURE" for the full monorepo layout.
-Most module/service files outside `backend/app/core` are currently empty stubs; they're filled in
-phase by phase per `docs/IMPLEMENTATION_PROMPT.md`.
+See `docs/DEVELOPER_GUIDE.md` for the annotated repo layout, or
+`docs/IMPLEMENTATION_PROMPT.md` → "TARGET REPOSITORY STRUCTURE" for the original target.
+
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| `docs/SRS.md` | Requirements, actors, acceptance criteria |
+| `docs/API.md` | Endpoint reference, auth flow, error catalogue |
+| `docs/DB_DESIGN.md` | MongoDB collections, indexes, geospatial queries |
+| `docs/THREAT_MODEL.md` | Assets, threats, mitigations, honest limitations |
+| `docs/TEST_PLAN.md` | Test strategy, coverage, current results |
+| `docs/DEPLOYMENT.md` | Exact deploy sequence (Sepolia → Atlas → R2 → Render → Vercel) |
+| `docs/USER_GUIDE.md` | What each role can do, per page |
+| `docs/DEVELOPER_GUIDE.md` | Local setup, conventions, contributing |
+| `docs/RESEARCH.md` | Research question, method, metrics, baselines, limitations |
+| `docs/DEMO_SCRIPT.md` | The 10-minute live demo, minute by minute |
 
 ## Guardrails
 

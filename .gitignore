@@ -42,5 +42,8 @@ Thumbs.db
 mongo_data/
 minio_data/
 
+# Local DB dumps (scripts/backup.sh) — never commit real/demo data
+backups/
+
 docs/info.md
 

@@ -77,6 +77,15 @@ class Settings(BaseSettings):
     # --- CORS ---
     CORS_ORIGINS: str = "http://localhost:5173"
 
+    # --- Hardening ---
+    RATE_LIMIT_PER_MIN: int = 120
+    # Off by default in the test env (backend/tests/conftest.py sets this to
+    # false before the app is imported) — every test-suite request looks
+    # like it comes from the same client (httpx's ASGITransport reports no
+    # client address), so the global limiter would otherwise trip mid-run
+    # against unrelated tests. Real deployments (dev and prod) leave this on.
+    RATE_LIMIT_ENABLED: bool = True
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
