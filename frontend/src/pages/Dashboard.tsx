@@ -5,7 +5,7 @@ import { listDocuments } from "../api/documents";
 import ErrorBanner from "../components/ErrorBanner";
 import Spinner from "../components/Spinner";
 import StatusBadge from "../components/StatusBadge";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { useGeoLocation } from "../hooks/useGeoLocation";
 import { formatDateTime } from "../lib/format";
 import { hasPermission, PERMISSIONS, ROLE_LABELS, type Role } from "../lib/permissions";

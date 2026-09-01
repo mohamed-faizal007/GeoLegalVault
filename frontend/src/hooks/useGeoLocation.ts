@@ -63,16 +63,30 @@ export function useGeoLocation(autoStart = true) {
     loading: autoStart,
   });
 
-  const refresh = useCallback(() => {
-    setState({ coords: null, error: null, loading: true });
+  // Shared by both call sites below, but deliberately does NOT itself reset
+  // `state` to the loading shape first — the initial mount effect already
+  // starts from the correct `loading: autoStart` value via useState, and
+  // synchronously calling setState from inside an effect body (rather than
+  // only from its async .then/.catch callbacks) causes an avoidable extra
+  // render right after mount.
+  const fetchLocation = useCallback(() => {
     getCurrentLocation()
       .then((coords) => setState({ coords, error: null, loading: false }))
       .catch((error: GeoLocationError) => setState({ coords: null, error, loading: false }));
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // refresh() IS called from event handlers (a button click), never from an
+  // effect body, so resetting to the loading shape synchronously here is fine.
+  const refresh = useCallback(() => {
+    setState({ coords: null, error: null, loading: true });
+    fetchLocation();
+  }, [fetchLocation]);
+
   useEffect(() => {
-    if (autoStart) refresh();
+    if (autoStart) fetchLocation();
+    // Intentionally mount-only: `autoStart` is a one-time initial mode, not
+    // meant to re-trigger a fetch on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return { ...state, refresh };

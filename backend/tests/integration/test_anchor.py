@@ -10,9 +10,11 @@ instead of real Sepolia.
 
 import json
 import os
+import platform
 import shutil
 import socket
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -43,23 +45,85 @@ _DEV_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4
 _ENV_KEYS = ("SEPOLIA_RPC_URL", "SERVICE_WALLET_PRIVATE_KEY", "CONTRACT_ADDRESS", "CHAIN_ID")
 
 
+_IS_WINDOWS = platform.system() == "Windows"
+
+
+def _popen_kwargs_for_new_process_group() -> dict[str, Any]:
+    """So the whole tree can be killed at once, not just the immediate
+    child: `npx` (a wrapper — npx-cli.js on Windows, a shell/node script on
+    POSIX) spawns the real `hardhat node` as a SEPARATE child process, and
+    a plain proc.terminate()/kill() only ever touches that wrapper. Without
+    this, every fixture teardown silently leaked the actual node process —
+    confirmed empirically as ~150 accumulated zombie node.exe processes
+    across one session's worth of test runs, which is a far more likely
+    cause of "times out under load" than the node itself being slow.
+    """
+    if _IS_WINDOWS:
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def _kill_process_tree(proc: subprocess.Popen) -> None:
+    if _IS_WINDOWS:
+        # taskkill /T walks the real Windows parent->child process tree —
+        # this is what actually reaches the grandchild `node.exe` that
+        # proc.terminate() alone cannot see.
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+
+    import signal
+
+    try:
+        pgid = os.getpgid(proc.pid)
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
 
 
-def _wait_for_rpc(url: str, timeout: float = 30.0) -> None:
+def _wait_for_rpc(url: str, proc: subprocess.Popen, log_file, timeout: float = 90.0) -> None:
+    """Poll until the node answers eth_blockNumber, or fail fast the moment
+    the process itself has already died (e.g. EADDRINUSE) instead of
+    burning the full timeout waiting for a node that will never answer.
+
+    90s (not 30s) because a cold `npx hardhat node` start is genuinely slow
+    under load — a busy CI runner or a first-ever compile — and this was
+    the single biggest source of spurious failures in this suite.
+    """
     deadline = time.time() + timeout
     payload = {"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 1}
     while time.time() < deadline:
+        exit_code = proc.poll()
+        if exit_code is not None:
+            log_file.seek(0)
+            output = log_file.read()
+            raise RuntimeError(
+                f"hardhat node process exited early (code {exit_code}) before answering "
+                f"RPC at {url}. Output:\n{output}"
+            )
         try:
             if httpx.post(url, json=payload, timeout=1).status_code == 200:
                 return
         except httpx.HTTPError:
             pass
         time.sleep(0.5)
-    raise RuntimeError(f"hardhat node at {url} did not become ready in time")
+    raise RuntimeError(f"hardhat node at {url} did not become ready within {timeout}s")
 
 
 def _deploy_contract(rpc_url: str) -> tuple[str, int]:
@@ -84,8 +148,16 @@ def _deploy_contract(rpc_url: str) -> tuple[str, int]:
     return receipt["contractAddress"], chain_id
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def local_chain():
+    """One ephemeral Hardhat node for the whole test session (not
+    per-module): every test file that needs a chain imports this same
+    fixture, and spawning the subprocess only once — instead of once per
+    file — was the other big source of flakiness (each spawn is a fresh
+    chance to lose a port race or hit a slow cold start). Isolation between
+    tests doesn't suffer: every test anchors a freshly-generated ObjectId,
+    so collisions across tests are not a real concern.
+    """
     if not ARTIFACT_PATH.exists():
         pytest.skip("contracts not compiled — run `cd contracts && npx hardhat compile` first")
 
@@ -95,16 +167,23 @@ def local_chain():
 
     port = _free_port()
     rpc_url = f"http://127.0.0.1:{port}"
+    # Hardhat logs every RPC call to stdout, and this session-scoped node
+    # serves every integration test file — a plain PIPE would fill its OS
+    # buffer and deadlock the node the moment nothing drains it. A real
+    # file never blocks the writer, and still gives us the log for
+    # diagnostics if the process dies early.
+    log_file = tempfile.TemporaryFile(mode="w+")
     proc = subprocess.Popen(
         [npx, "hardhat", "node", "--hostname", "127.0.0.1", "--port", str(port)],
         cwd=CONTRACTS_DIR,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        **_popen_kwargs_for_new_process_group(),
     )
 
     original_env = {key: os.environ.get(key) for key in _ENV_KEYS}
     try:
-        _wait_for_rpc(rpc_url)
+        _wait_for_rpc(rpc_url, proc, log_file)
         contract_address, chain_id = _deploy_contract(rpc_url)
 
         os.environ["SEPOLIA_RPC_URL"] = rpc_url
@@ -116,11 +195,8 @@ def local_chain():
 
         yield {"rpc_url": rpc_url, "contract_address": contract_address}
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        _kill_process_tree(proc)
+        log_file.close()
 
         for key, value in original_env.items():
             if value is None:

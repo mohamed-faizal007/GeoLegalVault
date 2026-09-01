@@ -13,7 +13,7 @@ import {
 import ErrorBanner from "../components/ErrorBanner";
 import Spinner from "../components/Spinner";
 import StatusBadge from "../components/StatusBadge";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { getCurrentLocation } from "../hooks/useGeoLocation";
 import { formatDateTime } from "../lib/format";
 import { hasPermission, PERMISSIONS } from "../lib/permissions";

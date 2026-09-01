@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { hasPermission, PERMISSIONS, type Permission } from "../lib/permissions";
 
 interface NavItem {

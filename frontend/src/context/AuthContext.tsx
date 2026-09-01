@@ -1,17 +1,9 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import * as authApi from "../api/auth";
 import { configureOnUnauthorized, configureRefresh, setSession, type StoredUser } from "../lib/authToken";
 import { decodeAccessToken } from "../lib/jwt";
-
-interface AuthContextValue {
-  user: StoredUser | null;
-  isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null);
+import { AuthContext } from "./useAuth";
 
 const EMAIL_KEY_PREFIX = "geolegalvault:lastEmail:";
 
@@ -91,10 +83,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
-  return ctx;
 }

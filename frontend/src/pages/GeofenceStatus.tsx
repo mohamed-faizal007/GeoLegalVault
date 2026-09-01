@@ -1,9 +1,24 @@
+import { useEffect, useState } from "react";
+
 import { useGeoLocation } from "../hooks/useGeoLocation";
 
 const ACCURACY_HINT_MAX_M = 100; // mirrors the server's GEO_ACCURACY_MAX_M default — a hint only
 
+/** Reading the wall clock directly during render is impure (React may
+ * re-render for unrelated reasons and produce a different "now" each time)
+ * — so "now" lives in state, ticking once a second via an effect instead. */
+function useNowSeconds(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return now / 1000;
+}
+
 export default function GeofenceStatus() {
   const { coords, error, loading, refresh } = useGeoLocation(true);
+  const nowSeconds = useNowSeconds();
 
   return (
     <div className="max-w-xl space-y-4">
@@ -42,7 +57,7 @@ export default function GeofenceStatus() {
               <div>
                 <p className="text-xs uppercase text-slate-400">Reading age</p>
                 <p className="text-slate-800">
-                  {Math.max(0, Math.round(Date.now() / 1000 - coords.timestamp))}s ago
+                  {Math.max(0, Math.round(nowSeconds - coords.timestamp))}s ago
                 </p>
               </div>
             </div>

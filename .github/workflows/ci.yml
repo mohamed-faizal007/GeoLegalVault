@@ -1,6 +1,100 @@
-# CI pipeline (lint, tests, build) — implemented in Phase 11.
-# Placeholder kept here now only so the repo tree matches the target structure (Phase 0).
 name: CI
 
 on:
-  workflow_dispatch: {}
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      # Node is needed here too: the backend's own integration tests spin up
+      # a real local Hardhat node (tests/integration/test_anchor.py's
+      # `local_chain` fixture) rather than mocking web3, so `npx hardhat`
+      # and a compiled contracts/artifacts/ must exist before pytest runs.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+
+      # python-magic (upload MIME/magic-byte validation) needs the system
+      # libmagic shared library on Linux.
+      - run: sudo apt-get update && sudo apt-get install -y libmagic1
+
+      - run: pip install -r requirements.txt
+
+      - name: Install + compile contracts (for the Hardhat-node fixture)
+        working-directory: contracts
+        run: |
+          npm ci
+          npx hardhat compile
+
+      - name: Start Mongo + MinIO (docker-compose — same config as local dev)
+        working-directory: .
+        run: docker compose up -d mongo minio minio-init
+
+      - name: Wait for Mongo + MinIO to report healthy
+        run: |
+          timeout 60 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" geolegalvault-mongo-1 2>/dev/null)" = "healthy" ]; do sleep 1; done'
+          timeout 60 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" geolegalvault-minio-1 2>/dev/null)" = "healthy" ]; do sleep 1; done'
+
+      - name: Ruff lint
+        run: python -m ruff check app tests
+
+      - name: pytest (coverage enforced via pyproject.toml, fail-under 60%)
+        env:
+          MONGODB_URI: mongodb://localhost:27017
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_ACCESS_KEY: minioadmin
+          STORAGE_SECRET_KEY: minioadmin
+          STORAGE_BUCKET: geolegalvault-dev
+        run: python -m pytest
+
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+
+      - run: npm ci
+      - run: npx hardhat test
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build

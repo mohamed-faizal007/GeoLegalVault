@@ -19,3 +19,11 @@ asyncio_mode = "auto"
 # loop), so tests must share a single loop too or Motor raises "attached to
 # a different loop" the moment a second per-test loop touches it.
 asyncio_default_fixture_loop_scope = "session"
+addopts = "--cov=app --cov-report=term-missing --cov-fail-under=60"
+
+[tool.coverage.run]
+# The optional background worker (Guardrail's own golden-rule cut list:
+# "anchor synchronously with a spinner" is the documented fallback) is the
+# one component this project's own priority order says is fine to leave
+# untested — excluded here rather than padded with a token test.
+omit = ["app/workers/*"]
