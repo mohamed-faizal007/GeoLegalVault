@@ -25,11 +25,11 @@ export default function Settings() {
 
   return (
     <div className="max-w-md space-y-6">
-      <h1 className="text-lg font-semibold text-slate-900">Settings</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Settings</h1>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card-pad">
         <h2 className="text-sm font-semibold text-slate-800">Profile</h2>
-        <dl className="mt-2 space-y-1 text-sm">
+        <dl className="mt-2 space-y-1.5 text-sm">
           <div className="flex justify-between">
             <dt className="text-slate-400">Email</dt>
             <dd className="text-slate-700">{user?.email || "—"}</dd>
@@ -41,10 +41,7 @@ export default function Settings() {
         </dl>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-      >
+      <form onSubmit={handleSubmit} className="card space-y-3 p-4">
         <h2 className="text-sm font-semibold text-slate-800">Change password</h2>
 
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -59,7 +56,7 @@ export default function Settings() {
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
           autoComplete="current-password"
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input"
         />
         <input
           type="password"
@@ -67,7 +64,7 @@ export default function Settings() {
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           autoComplete="new-password"
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input"
         />
         <input
           type="password"
@@ -75,7 +72,7 @@ export default function Settings() {
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           autoComplete="new-password"
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input"
         />
 
         {validationError && (
@@ -85,7 +82,7 @@ export default function Settings() {
         <button
           type="submit"
           disabled={!currentPassword || !newPassword || !confirmPassword}
-          className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+          className="btn-primary w-full"
         >
           Save (not yet wired to a backend endpoint)
         </button>

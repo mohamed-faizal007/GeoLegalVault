@@ -31,9 +31,9 @@ export default function HealthPanel() {
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
       {rows.map(([label, value]) => (
-        <div key={label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div key={label} className="card-pad">
           <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
-          <p className={`mt-1 text-sm font-semibold ${statusColor(value)}`}>{value}</p>
+          <p className={`mt-1.5 text-sm font-semibold ${statusColor(value)}`}>{value}</p>
         </div>
       ))}
     </div>

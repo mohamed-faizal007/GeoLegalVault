@@ -16,9 +16,9 @@ function StatCard({
   const toneClass =
     tone === "good" ? "text-emerald-600" : tone === "bad" ? "text-red-600" : "text-slate-900";
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="card-pad">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${toneClass}`}>{value}</p>
+      <p className={`mt-1.5 text-2xl font-semibold ${toneClass}`}>{value}</p>
     </div>
   );
 }
@@ -33,19 +33,19 @@ function BarChart({
 }) {
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="card-pad">
       <h2 className="mb-3 text-sm font-semibold text-slate-800">{title}</h2>
       {rows.length === 0 && <p className="text-sm text-slate-400">No data yet.</p>}
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {rows.map((row) => (
           <div key={row.label}>
-            <div className="mb-0.5 flex justify-between text-xs text-slate-500">
+            <div className="mb-1 flex justify-between text-xs text-slate-500">
               <span>{row.label.replaceAll("_", " ")}</span>
-              <span>{row.count}</span>
+              <span className="font-medium text-slate-700">{row.count}</span>
             </div>
             <div className="h-2 rounded-full bg-slate-100">
               <div
-                className="h-2 rounded-full bg-slate-700"
+                className="h-2 rounded-full bg-brand-500 transition-all"
                 style={{ width: `${(row.count / max) * 100}%` }}
               />
             </div>

@@ -12,15 +12,37 @@ const RESULT_STYLES: Record<VerificationResult, string> = {
   NOT_ANCHORED: "bg-slate-50 border-slate-300 text-slate-700",
 };
 
+const RESULT_ICON_STYLES: Record<VerificationResult, string> = {
+  VERIFIED: "bg-emerald-100 text-emerald-600",
+  MISMATCH: "bg-red-100 text-red-600",
+  NOT_ANCHORED: "bg-slate-200 text-slate-500",
+};
+
 const RESULT_HEADLINE: Record<VerificationResult, string> = {
   VERIFIED: "VERIFIED",
   MISMATCH: "MISMATCH — tamper detected",
   NOT_ANCHORED: "NOT ANCHORED YET",
 };
 
+const RESULT_ICON_PATH: Record<VerificationResult, string> = {
+  VERIFIED: "m5 13 4 4L19 7",
+  MISMATCH: "M6 6l12 12M18 6 6 18",
+  NOT_ANCHORED: "M6 12h12",
+};
+
+function ResultIcon({ result }: { result: VerificationResult }) {
+  return (
+    <span className={`flex h-12 w-12 items-center justify-center rounded-full ${RESULT_ICON_STYLES[result]}`}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
+        <path d={RESULT_ICON_PATH[result]} />
+      </svg>
+    </span>
+  );
+}
+
 function HashRow({ label, value }: { label: string; value: string | null }) {
   return (
-    <div className="flex flex-col gap-0.5 border-b border-slate-100 py-2 last:border-0">
+    <div className="flex flex-col gap-0.5 border-b border-slate-100 py-2.5 last:border-0">
       <span className="text-xs uppercase tracking-wide text-slate-400">{label}</span>
       <span className="break-all font-mono text-xs text-slate-700">{value ?? "— not available —"}</span>
     </div>
@@ -68,32 +90,28 @@ export default function Verification() {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">Integrity Verification</h1>
-        <p className="text-sm text-slate-500">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Integrity Verification</h1>
+        <p className="mt-0.5 text-sm text-slate-500">
           Recomputes the SHA-256 of the stored file and compares it against the hash saved at
           upload time and the hash anchored on-chain.
         </p>
       </div>
 
-      <button
-        type="button"
-        onClick={() => verifyMutation.mutate()}
-        disabled={verifyMutation.isPending}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-      >
+      <button type="button" onClick={() => verifyMutation.mutate()} disabled={verifyMutation.isPending} className="btn-primary">
         {verifyMutation.isPending ? "Verifying…" : "Run verification"}
       </button>
 
       {verifyMutation.error && <ErrorBanner error={verifyMutation.error} />}
 
       {display && (
-        <div className={`rounded-lg border-2 p-6 text-center ${RESULT_STYLES[display.result]}`}>
+        <div className={`flex flex-col items-center gap-3 rounded-lg border-2 p-6 text-center shadow-sm ${RESULT_STYLES[display.result]}`}>
+          <ResultIcon result={display.result} />
           <p className="text-2xl font-bold tracking-wide">{RESULT_HEADLINE[display.result]}</p>
         </div>
       )}
 
       {display && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="card-pad">
           <h2 className="mb-1 text-sm font-semibold text-slate-800">3-way hash comparison</h2>
           <HashRow label="Recomputed (current file bytes)" value={display.recomputed} />
           <HashRow label="Stored (recorded at upload)" value={display.stored} />
@@ -104,7 +122,7 @@ export default function Verification() {
                 href={display.etherscanUrl ?? "#"}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs font-medium text-slate-600 underline"
+                className="text-xs font-medium text-brand-600 underline hover:text-brand-700"
               >
                 View transaction on Etherscan
               </a>
@@ -118,8 +136,8 @@ export default function Verification() {
         </div>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-4 py-3">
+      <div className="card">
+        <div className="card-header">
           <h2 className="text-sm font-semibold text-slate-800">Verification history</h2>
         </div>
         {historyQuery.isLoading && <Spinner label="Loading history…" />}
@@ -134,7 +152,7 @@ export default function Verification() {
         {historyQuery.data && historyQuery.data.items.length > 0 && (
           <ul className="divide-y divide-slate-100">
             {historyQuery.data.items.map((record) => (
-              <li key={record.id} className="flex items-center justify-between px-4 py-2 text-sm">
+              <li key={record.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
                 <span className={`font-medium ${record.result === "VERIFIED" ? "text-emerald-600" : record.result === "MISMATCH" ? "text-red-600" : "text-slate-500"}`}>
                   {record.result}
                 </span>
@@ -145,7 +163,7 @@ export default function Verification() {
         )}
       </div>
 
-      <Link to={`/versions/${id}/blockchain`} className="text-xs text-slate-500 hover:underline">
+      <Link to={`/versions/${id}/blockchain`} className="link-muted text-xs">
         View full blockchain anchor record →
       </Link>
     </div>

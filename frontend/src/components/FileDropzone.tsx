@@ -34,7 +34,7 @@ export default function FileDropzone({
         }}
         onClick={() => inputRef.current?.click()}
         className={`cursor-pointer rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors ${
-          dragging ? "border-slate-500 bg-slate-50" : "border-slate-300 hover:border-slate-400"
+          dragging ? "border-brand-400 bg-brand-50/50" : "border-slate-300 hover:border-slate-400 hover:bg-slate-50"
         }`}
       >
         <input
@@ -43,15 +43,25 @@ export default function FileDropzone({
           className="hidden"
           onChange={(e) => onChange(e.target.files?.[0] ?? null)}
         />
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          className={`mx-auto h-8 w-8 ${dragging ? "text-brand-500" : "text-slate-300"}`}
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0 4 4m-4-4-4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+        </svg>
         {file ? (
-          <div>
+          <div className="mt-3">
             <p className="text-sm font-medium text-slate-700">{file.name}</p>
             <p className="mt-1 text-xs text-slate-400">
               {(file.size / 1024 / 1024).toFixed(2)} MB — click or drop to replace
             </p>
           </div>
         ) : (
-          <div>
+          <div className="mt-3">
             <p className="text-sm font-medium text-slate-600">
               Drag & drop a file here, or click to choose one
             </p>

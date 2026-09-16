@@ -62,17 +62,17 @@ export default function AmendmentRequest() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <h1 className="text-lg font-semibold text-slate-900">Amend: {docQuery.data.title}</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Amend: {docQuery.data.title}</h1>
 
       {!readyForNewVersion && (
         <LocationGate>
           {(coords) => (
             <form
               onSubmit={(e) => handleRequestSubmit(e, coords)}
-              className="space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+              className="card space-y-4 p-6"
             >
               <div>
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="field-label">
                   Reason for amendment
                 </label>
                 <textarea
@@ -80,15 +80,11 @@ export default function AmendmentRequest() {
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   rows={3}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  className="input mt-1"
                 />
               </div>
               {requestMutation.error && <ErrorBanner error={requestMutation.error} />}
-              <button
-                type="submit"
-                disabled={requestMutation.isPending}
-                className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-              >
+              <button type="submit" disabled={requestMutation.isPending} className="btn-primary w-full">
                 {requestMutation.isPending ? "Submitting…" : "Request amendment"}
               </button>
             </form>
@@ -101,29 +97,25 @@ export default function AmendmentRequest() {
           {(coords) => (
             <form
               onSubmit={(e) => handleUploadSubmit(e, coords)}
-              className="space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+              className="card space-y-4 p-6"
             >
               <p className="text-sm text-slate-500">
                 Amendment approved for a new version — upload the corrected file below to create
                 the next version.
               </p>
               <div>
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="field-label">
                   Tags (comma separated)
                 </label>
                 <input
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  className="input mt-1"
                 />
               </div>
               <FileDropzone file={file} onChange={setFile} />
               {uploadMutation.error && <ErrorBanner error={uploadMutation.error} />}
-              <button
-                type="submit"
-                disabled={!file || uploadMutation.isPending}
-                className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-              >
+              <button type="submit" disabled={!file || uploadMutation.isPending} className="btn-primary w-full">
                 {uploadMutation.isPending ? "Uploading…" : "Upload new version"}
               </button>
             </form>

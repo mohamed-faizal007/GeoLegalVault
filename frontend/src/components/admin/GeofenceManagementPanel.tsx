@@ -78,17 +78,14 @@ export default function GeofenceManagementPanel() {
 
   return (
     <div className="space-y-6">
-      <form
-        onSubmit={handleSubmit}
-        className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-      >
+      <form onSubmit={handleSubmit} className="card space-y-3 p-4">
         <h2 className="text-sm font-semibold text-slate-800">Create geofence</h2>
         <input
           required
           placeholder="Name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input"
         />
         <div>
           <p className="mb-1 text-xs font-medium text-slate-500">
@@ -99,20 +96,16 @@ export default function GeofenceManagementPanel() {
             value={ringText}
             onChange={(e) => setRingText(e.target.value)}
             rows={6}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-xs"
+            className="input font-mono text-xs"
           />
         </div>
         {createMutation.error && <ErrorBanner error={createMutation.error} />}
-        <button
-          type="submit"
-          disabled={createMutation.isPending}
-          className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-        >
+        <button type="submit" disabled={createMutation.isPending} className="btn-primary">
           {createMutation.isPending ? "Creating…" : "Create geofence"}
         </button>
       </form>
 
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="card overflow-hidden">
         {geofencesQuery.isLoading && <Spinner label="Loading geofences…" />}
         {geofencesQuery.error && (
           <div className="p-4">
@@ -121,33 +114,33 @@ export default function GeofenceManagementPanel() {
         )}
         {geofencesQuery.data && (
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="table-head">
               <tr>
-                <th className="px-4 py-2 font-medium">Name</th>
-                <th className="px-4 py-2 font-medium">Vertices</th>
-                <th className="px-4 py-2 font-medium">Active</th>
-                <th className="px-4 py-2 font-medium" />
+                <th className="px-4 py-2.5 font-medium">Name</th>
+                <th className="px-4 py-2.5 font-medium">Vertices</th>
+                <th className="px-4 py-2.5 font-medium">Active</th>
+                <th className="px-4 py-2.5 font-medium" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {geofencesQuery.data.items.map((fence) => (
-                <tr key={fence.id}>
-                  <td className="px-4 py-2">{fence.name}</td>
-                  <td className="px-4 py-2 text-slate-500">
+                <tr key={fence.id} className="table-row-hover">
+                  <td className="px-4 py-2.5">{fence.name}</td>
+                  <td className="px-4 py-2.5 text-slate-500">
                     {fence.region.coordinates[0]?.length ?? 0}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2.5">
                     {fence.active ? (
                       <span className="text-emerald-600">Active</span>
                     ) : (
                       <span className="text-slate-400">Deactivated</span>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="px-4 py-2.5 text-right">
                     <button
                       type="button"
                       onClick={() => toggleActiveMutation.mutate({ id: fence.id, active: fence.active })}
-                      className="text-xs font-medium text-slate-600 underline"
+                      className="text-xs font-medium text-brand-600 underline hover:text-brand-700"
                     >
                       {fence.active ? "Deactivate" : "Reactivate"}
                     </button>

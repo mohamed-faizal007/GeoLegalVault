@@ -17,13 +17,13 @@ const ROLE_QUEUE_STATUS: Partial<Record<Role, string>> = {
 
 function StatCard({ label, value, to }: { label: string; value: number | string; to?: string }) {
   const content = (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="card-pad transition-shadow hover:shadow-md">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-1.5 text-2xl font-semibold text-slate-900">{value}</p>
     </div>
   );
   return to ? (
-    <Link to={to} className="block transition hover:shadow-md">
+    <Link to={to} className="block">
       {content}
     </Link>
   ) : (
@@ -59,10 +59,10 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
           Welcome{user?.email ? `, ${user.email}` : ""}
         </h1>
-        <p className="text-sm text-slate-500">
+        <p className="mt-0.5 text-sm text-slate-500">
           {role ? ROLE_LABELS[role] : ""} — here's what's happening across the vault.
         </p>
       </div>
@@ -87,12 +87,12 @@ export default function Dashboard() {
             to="/documents"
           />
         )}
-        <Link to="/geofence-status" className="block transition hover:shadow-md">
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <Link to="/geofence-status" className="block">
+          <div className="card-pad transition-shadow hover:shadow-md">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
               Location status
             </p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">
+            <p className="mt-1.5 text-sm font-semibold text-slate-900">
               {geo.loading
                 ? "Locating…"
                 : geo.coords
@@ -103,10 +103,10 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+      <div className="card">
+        <div className="card-header">
           <h2 className="text-sm font-semibold text-slate-800">Recent documents</h2>
-          <Link to="/documents" className="text-xs font-medium text-slate-500 hover:underline">
+          <Link to="/documents" className="text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline">
             View all
           </Link>
         </div>

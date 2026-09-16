@@ -48,10 +48,7 @@ export default function UserManagementPanel() {
 
   return (
     <div className="space-y-6">
-      <form
-        onSubmit={handleCreate}
-        className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-      >
+      <form onSubmit={handleCreate} className="card space-y-3 p-4">
         <h2 className="text-sm font-semibold text-slate-800">Create user</h2>
         <div className="grid grid-cols-2 gap-3">
           <input
@@ -60,7 +57,7 @@ export default function UserManagementPanel() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="input"
           />
           <input
             required
@@ -69,20 +66,16 @@ export default function UserManagementPanel() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             minLength={8}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="input"
           />
           <input
             required
             placeholder="Full name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="input"
           />
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
+          <select value={role} onChange={(e) => setRole(e.target.value)} className="input">
             {ROLE_OPTIONS.map((r) => (
               <option key={r} value={r}>
                 {r}
@@ -96,7 +89,7 @@ export default function UserManagementPanel() {
             multiple
             value={fenceIds}
             onChange={(e) => setFenceIds(Array.from(e.target.selectedOptions, (o) => o.value))}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="input"
           >
             {geofencesQuery.data?.items.map((fence) => (
               <option key={fence.id} value={fence.id}>
@@ -106,16 +99,12 @@ export default function UserManagementPanel() {
           </select>
         </div>
         {createMutation.error && <ErrorBanner error={createMutation.error} />}
-        <button
-          type="submit"
-          disabled={createMutation.isPending}
-          className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-        >
+        <button type="submit" disabled={createMutation.isPending} className="btn-primary">
           {createMutation.isPending ? "Creating…" : "Create user"}
         </button>
       </form>
 
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="card overflow-hidden">
         {usersQuery.isLoading && <Spinner label="Loading users…" />}
         {usersQuery.error && (
           <div className="p-4">
@@ -124,33 +113,33 @@ export default function UserManagementPanel() {
         )}
         {usersQuery.data && (
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="table-head">
               <tr>
-                <th className="px-4 py-2 font-medium">Email</th>
-                <th className="px-4 py-2 font-medium">Name</th>
-                <th className="px-4 py-2 font-medium">Role</th>
-                <th className="px-4 py-2 font-medium">Active</th>
-                <th className="px-4 py-2 font-medium" />
+                <th className="px-4 py-2.5 font-medium">Email</th>
+                <th className="px-4 py-2.5 font-medium">Name</th>
+                <th className="px-4 py-2.5 font-medium">Role</th>
+                <th className="px-4 py-2.5 font-medium">Active</th>
+                <th className="px-4 py-2.5 font-medium" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {usersQuery.data.items.map((u) => (
-                <tr key={u.id}>
-                  <td className="px-4 py-2">{u.email}</td>
-                  <td className="px-4 py-2">{u.name}</td>
-                  <td className="px-4 py-2 text-slate-500">{u.role}</td>
-                  <td className="px-4 py-2">
+                <tr key={u.id} className="table-row-hover">
+                  <td className="px-4 py-2.5">{u.email}</td>
+                  <td className="px-4 py-2.5">{u.name}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{u.role}</td>
+                  <td className="px-4 py-2.5">
                     {u.is_active ? (
                       <span className="text-emerald-600">Active</span>
                     ) : (
                       <span className="text-slate-400">Deactivated</span>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="px-4 py-2.5 text-right">
                     <button
                       type="button"
                       onClick={() => toggleActiveMutation.mutate({ id: u.id, isActive: u.is_active })}
-                      className="text-xs font-medium text-slate-600 underline"
+                      className="text-xs font-medium text-brand-600 underline hover:text-brand-700"
                     >
                       {u.is_active ? "Deactivate" : "Reactivate"}
                     </button>

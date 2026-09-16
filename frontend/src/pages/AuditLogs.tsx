@@ -31,9 +31,9 @@ export default function AuditLogs() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-semibold text-slate-900">Audit Logs</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Audit Logs</h1>
 
-      <div className="flex flex-wrap gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap gap-3 card-pad">
         <input
           value={action}
           onChange={(e) => {
@@ -41,7 +41,7 @@ export default function AuditLogs() {
             setPage(1);
           }}
           placeholder="Action (e.g. LOGIN_SUCCESS)"
-          className="w-56 rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input w-56"
         />
         <input
           value={result}
@@ -50,7 +50,7 @@ export default function AuditLogs() {
             setPage(1);
           }}
           placeholder="Result (e.g. SUCCESS)"
-          className="w-48 rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input w-48"
         />
         <input
           value={targetType}
@@ -59,11 +59,11 @@ export default function AuditLogs() {
             setPage(1);
           }}
           placeholder="Target type (e.g. document)"
-          className="w-56 rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input w-56"
         />
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="card overflow-x-auto">
         {auditQuery.isLoading && <Spinner label="Loading audit log…" />}
         {auditQuery.error && (
           <div className="p-4">
@@ -77,44 +77,44 @@ export default function AuditLogs() {
         )}
         {auditQuery.data && auditQuery.data.items.length > 0 && (
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="table-head">
               <tr>
-                <th className="px-4 py-2 font-medium">When</th>
-                <th className="px-4 py-2 font-medium">Actor</th>
-                <th className="px-4 py-2 font-medium">Action</th>
-                <th className="px-4 py-2 font-medium">Target</th>
-                <th className="px-4 py-2 font-medium">Result</th>
-                <th className="px-4 py-2 font-medium">IP</th>
+                <th className="px-4 py-2.5 font-medium">When</th>
+                <th className="px-4 py-2.5 font-medium">Actor</th>
+                <th className="px-4 py-2.5 font-medium">Action</th>
+                <th className="px-4 py-2.5 font-medium">Target</th>
+                <th className="px-4 py-2.5 font-medium">Result</th>
+                <th className="px-4 py-2.5 font-medium">IP</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {auditQuery.data.items.map((entry) => (
-                <tr key={entry.id}>
-                  <td className="whitespace-nowrap px-4 py-2 text-slate-500">
+                <tr key={entry.id} className="table-row-hover">
+                  <td className="whitespace-nowrap px-4 py-2.5 text-slate-500">
                     {formatDateTime(entry.created_at)}
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs text-slate-600">
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
                     {entry.actor_id ?? "—"}
                   </td>
-                  <td className="px-4 py-2 font-medium text-slate-800">{entry.action}</td>
-                  <td className="px-4 py-2 text-slate-500">
+                  <td className="px-4 py-2.5 font-medium text-slate-800">{entry.action}</td>
+                  <td className="px-4 py-2.5 text-slate-500">
                     {entry.target_type}
                     {entry.target_id ? ` / ${entry.target_id}` : ""}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2.5">
                     <span
-                      className={
+                      className={`font-medium ${
                         entry.result === "SUCCESS"
                           ? "text-emerald-600"
                           : entry.result === "DENIED" || entry.result === "MISMATCH" || entry.result === "FAILED"
                             ? "text-red-600"
                             : "text-slate-500"
-                      }
+                      }`}
                     >
                       {entry.result}
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-xs text-slate-400">{entry.ip ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-400">{entry.ip ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -132,7 +132,7 @@ export default function AuditLogs() {
               type="button"
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+              className="btn-secondary btn-sm"
             >
               Previous
             </button>
@@ -140,7 +140,7 @@ export default function AuditLogs() {
               type="button"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+              className="btn-secondary btn-sm"
             >
               Next
             </button>

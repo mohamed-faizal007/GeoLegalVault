@@ -32,55 +32,55 @@ export default function Upload() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <h1 className="text-lg font-semibold text-slate-900">Upload a Document</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Upload a Document</h1>
 
       <LocationGate>
         {(coords) => (
           <form
             onSubmit={(e) => handleSubmit(e, coords)}
-            className="space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+            className="card space-y-4 p-6"
           >
             <div>
-              <label className="block text-sm font-medium text-slate-700">Title</label>
+              <label className="field-label">Title</label>
               <input
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className="input mt-1"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700">Document type</label>
+                <label className="field-label">Document type</label>
                 <input
                   required
                   value={docType}
                   onChange={(e) => setDocType(e.target.value)}
                   placeholder="e.g. CONTRACT"
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  className="input mt-1"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700">Classification</label>
+                <label className="field-label">Classification</label>
                 <input
                   required
                   value={classification}
                   onChange={(e) => setClassification(e.target.value)}
                   placeholder="e.g. RESTRICTED"
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  className="input mt-1"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">Tags (comma separated)</label>
+              <label className="field-label">Tags (comma separated)</label>
               <input
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className="input mt-1"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">File</label>
+              <label className="field-label">File</label>
               <div className="mt-1">
                 <FileDropzone file={file} onChange={setFile} />
               </div>
@@ -88,11 +88,7 @@ export default function Upload() {
 
             {mutation.error && <ErrorBanner error={mutation.error} />}
 
-            <button
-              type="submit"
-              disabled={!file || mutation.isPending}
-              className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-            >
+            <button type="submit" disabled={!file || mutation.isPending} className="btn-primary w-full">
               {mutation.isPending ? "Uploading…" : "Upload"}
             </button>
           </form>

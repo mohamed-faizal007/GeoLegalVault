@@ -42,54 +42,59 @@ export default function Login() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">GeoLegalVault</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Geospatially-aware document integrity & lifecycle platform
-        </p>
-
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-brand-600 text-lg font-bold text-white shadow-sm">
+            G
+          </span>
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-700">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-            />
+            <h1 className="text-xl font-semibold text-slate-900">GeoLegalVault</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Geospatially-aware document integrity & lifecycle platform
+            </p>
           </div>
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-700">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-            />
-          </div>
+        </div>
 
-          {error && (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-          )}
+        <div className="card p-8">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="email" className="field-label">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="input mt-1"
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="field-label">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="input mt-1"
+              />
+            </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-          >
-            {submitting ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
+            {error && (
+              <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+            )}
+
+            <button type="submit" disabled={submitting} className="btn-primary w-full">
+              {submitting ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

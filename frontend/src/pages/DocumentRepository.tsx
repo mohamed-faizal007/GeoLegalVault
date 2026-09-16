@@ -49,10 +49,10 @@ export default function DocumentRepository() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-900">Document Repository</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Document Repository</h1>
       </div>
 
-      <div className="flex flex-wrap gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap gap-3 card-pad">
         <input
           value={query}
           onChange={(e) => {
@@ -60,7 +60,7 @@ export default function DocumentRepository() {
             setPage(1);
           }}
           placeholder="Search title or tags…"
-          className="min-w-[200px] flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input min-w-[200px] flex-1"
         />
         <select
           value={status}
@@ -68,7 +68,7 @@ export default function DocumentRepository() {
             setStatus(e.target.value);
             setPage(1);
           }}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input w-auto"
         >
           {STATUS_OPTIONS.map((s) => (
             <option key={s} value={s}>
@@ -83,11 +83,11 @@ export default function DocumentRepository() {
             setPage(1);
           }}
           placeholder="Doc type…"
-          className="w-40 rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input w-40"
         />
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="card overflow-hidden">
         {documentsQuery.isLoading && <Spinner label="Loading documents…" />}
         {documentsQuery.error && (
           <div className="p-4">
@@ -104,23 +104,23 @@ export default function DocumentRepository() {
         )}
         {documentsQuery.data && documentsQuery.data.items.length > 0 && (
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="table-head">
               <tr>
-                <th className="px-4 py-2 font-medium">Title</th>
-                <th className="px-4 py-2 font-medium">Type</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium">Updated</th>
+                <th className="px-4 py-2.5 font-medium">Title</th>
+                <th className="px-4 py-2.5 font-medium">Type</th>
+                <th className="px-4 py-2.5 font-medium">Status</th>
+                <th className="px-4 py-2.5 font-medium">Updated</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {documentsQuery.data.items.map((doc) => (
-                <tr key={doc.id} className="hover:bg-slate-50">
+                <tr key={doc.id} className="table-row-hover">
                   <td className="px-4 py-3">
-                    <Link to={`/documents/${doc.id}`} className="font-medium text-slate-800 hover:underline">
+                    <Link to={`/documents/${doc.id}`} className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
                       {doc.title}
                     </Link>
                     {doc.integrity_flag === "TAMPERED" && (
-                      <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                      <span className="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">
                         TAMPERED
                       </span>
                     )}
@@ -147,7 +147,7 @@ export default function DocumentRepository() {
               type="button"
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+              className="btn-secondary btn-sm"
             >
               Previous
             </button>
@@ -155,7 +155,7 @@ export default function DocumentRepository() {
               type="button"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+              className="btn-secondary btn-sm"
             >
               Next
             </button>

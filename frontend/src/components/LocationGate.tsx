@@ -20,8 +20,8 @@ export default function LocationGate({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+      <div className="flex items-center gap-2.5 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600" />
         Requesting your current location…
       </div>
     );
@@ -48,10 +48,13 @@ export default function LocationGate({
 
   return (
     <>
-      <p className="mb-3 text-xs text-slate-400">
+      <p className="mb-3 flex items-center gap-1.5 text-xs text-slate-400">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21Zm0-9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+        </svg>
         Location reading: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)} (±
         {Math.round(coords.accuracy)}m){" "}
-        <button type="button" onClick={refresh} className="ml-1 text-slate-500 underline">
+        <button type="button" onClick={refresh} className="ml-1 text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-brand-700">
           refresh
         </button>
       </p>

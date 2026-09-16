@@ -43,9 +43,9 @@ export default function BlockchainVerification() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <h1 className="text-lg font-semibold text-slate-900">Blockchain Anchor Record</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Blockchain Anchor Record</h1>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card-pad">
         <Row label="Status" value={<StatusBadge status={anchor.status} />} />
         <Row label="Event type" value={anchor.event_type} />
         <Row label="Network" value={anchor.network} />
@@ -59,7 +59,7 @@ export default function BlockchainVerification() {
       </div>
 
       {anchor.onchain && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="card-pad">
           <h2 className="mb-1 text-sm font-semibold text-slate-800">Live on-chain read</h2>
           <Row label="Exists on-chain" value={anchor.onchain.exists ? "Yes" : "No"} />
           <Row label="On-chain hash" value={<span className="font-mono">{anchor.onchain.hash}</span>} />
@@ -68,12 +68,7 @@ export default function BlockchainVerification() {
       )}
 
       {anchor.etherscan_url && (
-        <a
-          href={anchor.etherscan_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-        >
+        <a href={anchor.etherscan_url} target="_blank" rel="noopener noreferrer" className="btn-secondary inline-flex">
           Open on Etherscan
         </a>
       )}
