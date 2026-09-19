@@ -62,7 +62,7 @@ export default function AmendmentRequest() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Amend: {docQuery.data.title}</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">Amend: {docQuery.data.title}</h1>
 
       {!readyForNewVersion && (
         <LocationGate>
@@ -99,7 +99,7 @@ export default function AmendmentRequest() {
               onSubmit={(e) => handleUploadSubmit(e, coords)}
               className="card space-y-4 p-6"
             >
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-muted">
                 Amendment approved for a new version — upload the corrected file below to create
                 the next version.
               </p>

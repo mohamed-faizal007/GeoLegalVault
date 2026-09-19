@@ -118,17 +118,17 @@ export default function DocumentDetails() {
     <div className="max-w-3xl space-y-6">
       <div>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{doc.title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">{doc.title}</h1>
           <StatusBadge status={doc.status} />
           {doc.integrity_flag === "TAMPERED" && <StatusBadge status="TAMPERED" />}
         </div>
-        <p className="mt-0.5 text-sm text-slate-500">
+        <p className="mt-0.5 text-sm text-muted">
           {doc.doc_type} — {doc.classification}
         </p>
       </div>
 
       {doc.integrity_flag === "TAMPERED" && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="rounded-md border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           A verification run detected that the stored file no longer matches its approved hash.
           See the Verification page for details.
         </div>
@@ -136,20 +136,20 @@ export default function DocumentDetails() {
 
       <div className="grid grid-cols-2 gap-4 card-pad text-sm md:grid-cols-3">
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">Owner</p>
-          <p className="mt-0.5 text-slate-700">{doc.owner_id}</p>
+          <p className="text-xs uppercase tracking-wide text-faint">Owner</p>
+          <p className="mt-0.5 text-ink/90">{doc.owner_id}</p>
         </div>
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">Created</p>
-          <p className="mt-0.5 text-slate-700">{formatDateTime(doc.created_at)}</p>
+          <p className="text-xs uppercase tracking-wide text-faint">Created</p>
+          <p className="mt-0.5 text-ink/90">{formatDateTime(doc.created_at)}</p>
         </div>
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">Updated</p>
-          <p className="mt-0.5 text-slate-700">{formatDateTime(doc.updated_at)}</p>
+          <p className="text-xs uppercase tracking-wide text-faint">Updated</p>
+          <p className="mt-0.5 text-ink/90">{formatDateTime(doc.updated_at)}</p>
         </div>
         <div className="col-span-2 md:col-span-3">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Tags</p>
-          <p className="mt-0.5 text-slate-700">{doc.tags.length ? doc.tags.join(", ") : "—"}</p>
+          <p className="text-xs uppercase tracking-wide text-faint">Tags</p>
+          <p className="mt-0.5 text-ink/90">{doc.tags.length ? doc.tags.join(", ") : "—"}</p>
         </div>
       </div>
 
@@ -204,7 +204,7 @@ export default function DocumentDetails() {
 
       {reviewOpen && (
         <div className="card-pad">
-          <h2 className="text-sm font-semibold text-slate-800">Review decision</h2>
+          <h2 className="text-sm font-semibold text-ink">Review decision</h2>
           <textarea
             value={reviewComment}
             onChange={(e) => setReviewComment(e.target.value)}

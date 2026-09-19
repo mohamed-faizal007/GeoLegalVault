@@ -3,38 +3,50 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark; /* native scrollbars, date pickers, file inputs */
+  }
+
   html {
     font-family: "Inter var", "Inter", ui-sans-serif, system-ui, sans-serif;
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-canvas text-ink antialiased;
   }
 
   ::selection {
-    @apply bg-brand-100 text-brand-900;
+    @apply bg-brand-500/40 text-white;
+  }
+
+  /* Visible keyboard focus everywhere; components can refine but not remove it. */
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-brand-400;
   }
 }
 
 @layer components {
   /* Buttons */
   .btn {
-    @apply inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md
-      px-3.5 py-2 text-sm font-medium transition-colors duration-150
+    @apply inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-lg
+      px-3.5 py-2 text-sm font-medium transition duration-200 ease-out
       focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
-      disabled:cursor-not-allowed disabled:opacity-50;
+      disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none disabled:hover:scale-100;
   }
   .btn-primary {
-    @apply btn bg-brand-600 text-white shadow-sm hover:bg-brand-700 focus-visible:outline-brand-600;
+    @apply btn bg-brand-600 text-white shadow-glow hover:scale-[1.02] hover:bg-brand-500 hover:shadow-glow-lg
+      active:scale-[0.99] focus-visible:outline-brand-300;
   }
   .btn-secondary {
-    @apply btn border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-brand-600;
+    @apply btn border border-white/15 bg-white/5 text-ink hover:border-brand-400/60 hover:bg-white/10
+      hover:shadow-card-hover focus-visible:outline-brand-300;
   }
   .btn-danger {
-    @apply btn border border-red-300 bg-white text-red-700 hover:bg-red-50 focus-visible:outline-red-600;
+    @apply btn border border-red-400/40 bg-red-500/10 text-red-300 hover:border-red-400/70 hover:bg-red-500/20
+      focus-visible:outline-red-300;
   }
   .btn-ghost {
-    @apply btn text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-brand-600;
+    @apply btn text-muted hover:bg-white/10 hover:text-ink focus-visible:outline-brand-300;
   }
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
@@ -42,35 +54,81 @@
 
   /* Form controls */
   .field-label {
-    @apply block text-sm font-medium text-slate-700;
+    @apply block text-sm font-medium text-ink/90;
   }
   .input {
-    @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900
-      shadow-sm transition-colors placeholder:text-slate-400
-      focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+    @apply w-full rounded-lg border border-white/15 bg-raised/70 px-3 py-2 text-sm text-ink
+      transition duration-200 placeholder:text-faint
+      hover:border-white/25
+      focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:shadow-glow;
   }
 
   /* Surfaces */
   .card {
-    @apply rounded-lg border border-slate-200 bg-white shadow-card;
+    @apply rounded-xl border border-white/10 bg-surface shadow-card transition duration-200 ease-out;
   }
   .card-pad {
     @apply card p-4;
   }
+  /* Opt-in hover treatment for cards that are clickable / list items. */
+  .card-hover {
+    @apply hover:border-brand-400/40 hover:shadow-card-hover;
+  }
   .card-header {
-    @apply flex items-center justify-between border-b border-slate-100 px-4 py-3;
+    @apply flex items-center justify-between border-b border-white/10 px-4 py-3;
   }
 
   /* Tables */
   .table-head {
-    @apply border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-400;
+    @apply border-b border-white/10 text-xs font-semibold uppercase tracking-wide text-faint;
   }
   .table-row-hover {
-    @apply transition-colors hover:bg-slate-50;
+    @apply transition-colors duration-150 hover:bg-white/5;
   }
 
   /* Links */
   .link-muted {
-    @apply text-slate-500 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-brand-700 hover:decoration-brand-400;
+    @apply text-muted underline decoration-white/25 underline-offset-2 transition-colors duration-150
+      hover:text-brand-300 hover:decoration-brand-400;
+  }
+
+  /* Loading placeholder: <div className="skeleton h-4 w-32" /> */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-white/[0.06];
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/10 to-transparent;
+  }
+}
+
+@layer utilities {
+  /* Soft grid texture, faded toward the edges. Decorative only. */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
+  }
+  .text-gradient {
+    @apply bg-gradient-to-br from-white via-brand-100 to-brand-400 bg-clip-text text-transparent;
+  }
+  .anim-delay-1 { animation-delay: 80ms; }
+  .anim-delay-2 { animation-delay: 160ms; }
+  .anim-delay-3 { animation-delay: 240ms; }
+  .anim-delay-4 { animation-delay: 320ms; }
+}
+
+/* Motion is decorative; respect the user's OS setting. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

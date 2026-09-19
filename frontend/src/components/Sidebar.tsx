@@ -1,5 +1,14 @@
-import { NavLink } from "react-router-dom";
-import type { ReactNode } from "react";
+import {
+  FolderOpen,
+  LayoutDashboard,
+  MapPin,
+  ScrollText,
+  Settings,
+  ShieldCheck,
+  Upload,
+  type LucideIcon,
+} from "lucide-react";
+import { NavLink, useLocation } from "react-router-dom";
 
 import { useAuth } from "../context/useAuth";
 import { hasPermission, PERMISSIONS, type Permission } from "../lib/permissions";
@@ -8,107 +17,134 @@ interface NavItem {
   to: string;
   label: string;
   permission?: Permission;
-  icon: ReactNode;
-}
-
-function icon(path: string): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-4.5 w-4.5 shrink-0"
-      aria-hidden="true"
-    >
-      <path d={path} />
-    </svg>
-  );
+  icon: LucideIcon;
+  group: "Workspace" | "Manage";
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: icon("M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5") },
-  {
-    to: "/documents",
-    label: "Document Repository",
-    icon: icon("M4 4h9l4 4v12H4V4Zm9 0v4h4M8 12h8M8 16h8M8 8h3"),
-  },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, group: "Workspace" },
+  { to: "/documents", label: "Document Repository", icon: FolderOpen, group: "Workspace" },
   {
     to: "/documents/upload",
     label: "Upload",
     permission: PERMISSIONS.DOCUMENT_UPLOAD,
-    icon: icon("M12 16V4m0 0 4 4m-4-4-4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"),
+    icon: Upload,
+    group: "Workspace",
   },
-  {
-    to: "/geofence-status",
-    label: "Geofence Status",
-    icon: icon("M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21Zm0-9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"),
-  },
+  { to: "/geofence-status", label: "Geofence Status", icon: MapPin, group: "Workspace" },
   {
     to: "/audit",
     label: "Audit Logs",
     permission: PERMISSIONS.AUDIT_VIEW,
-    icon: icon("M9 4h10v14l-4-2-4 2V4Zm0 0H6a1 1 0 0 0-1 1v14l4-2 3 1.6"),
+    icon: ScrollText,
+    group: "Manage",
   },
   {
     to: "/admin",
     label: "Admin Panel",
     permission: PERMISSIONS.USERS_MANAGE,
-    icon: icon("M12 3 4 6v6c0 5 3.4 7.7 8 9 4.6-1.3 8-4 8-9V6l-8-3Zm-2.5 9 2 2 3.5-3.5"),
+    icon: ShieldCheck,
+    group: "Manage",
   },
-  {
-    to: "/settings",
-    label: "Settings",
-    icon: icon(
-      "M10.3 3h3.4l.5 2.4a7 7 0 0 1 1.8 1l2.3-.8 1.7 3-1.8 1.6a7 7 0 0 1 0 2l1.8 1.6-1.7 3-2.3-.8a7 7 0 0 1-1.8 1L13.7 21h-3.4l-.5-2.4a7 7 0 0 1-1.8-1l-2.3.8-1.7-3 1.8-1.6a7 7 0 0 1 0-2L4 10.2l1.7-3 2.3.8a7 7 0 0 1 1.8-1L10.3 3ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
-    ),
-  },
+  { to: "/settings", label: "Settings", icon: Settings, group: "Manage" },
 ];
+
+/** Visual-only: "/documents" prefix-matches "/documents/upload", which would
+ * light two items at once. Routing itself is unchanged. */
+function isItemActive(to: string, routeActive: boolean, pathname: string): boolean {
+  if (to === "/documents" && pathname.startsWith("/documents/upload")) return false;
+  return routeActive;
+}
+
+const GROUPS: NavItem["group"][] = ["Workspace", "Manage"];
 
 export default function Sidebar() {
   const { user } = useAuth();
+  const { pathname } = useLocation();
+  const visible = NAV_ITEMS.filter(
+    (item) => !item.permission || hasPermission(user?.role, item.permission),
+  );
 
   return (
-    <nav className="flex h-full w-60 shrink-0 flex-col border-r border-slate-200 bg-white">
-      <div className="flex items-center gap-2 px-4 py-5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-brand-600 text-sm font-bold text-white">
+    <nav className="relative flex h-full w-64 shrink-0 flex-col border-r border-white/10 bg-surface">
+      {/* Soft brand glow behind the logo — decorative only */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(ellipse_at_top_left,rgb(99_102_241_/_0.22),transparent_70%)]"
+      />
+
+      <div className="relative flex items-center gap-3 px-5 py-5">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-sm font-bold text-white shadow-glow">
           G
         </span>
         <div className="leading-tight">
-          <p className="text-sm font-semibold text-slate-900">GeoLegalVault</p>
-          <p className="text-[11px] text-slate-400">Document integrity vault</p>
+          <p className="text-sm font-semibold tracking-tight text-ink">GeoLegalVault</p>
+          <p className="text-[11px] text-faint">Document integrity vault</p>
         </div>
       </div>
 
-      <div className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
-        {NAV_ITEMS.filter((item) => !item.permission || hasPermission(user?.role, item.permission)).map(
-          (item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                `group flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <span className={isActive ? "text-brand-600" : "text-slate-400 group-hover:text-slate-500"}>
-                    {item.icon}
-                  </span>
-                  {item.label}
-                </>
-              )}
-            </NavLink>
-          ),
-        )}
+      <div className="relative flex-1 space-y-6 overflow-y-auto px-3 pb-4 pt-2">
+        {GROUPS.map((group) => {
+          const items = visible.filter((item) => item.group === group);
+          if (items.length === 0) return null;
+          return (
+            <div key={group}>
+              <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-faint">
+                {group}
+              </p>
+              <div className="space-y-1">
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === "/"}
+                      className={({ isActive: routeActive }) => {
+                        const isActive = isItemActive(item.to, routeActive, pathname);
+                        return `group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ${
+                          isActive
+                            ? "bg-gradient-to-r from-brand-500/20 to-brand-500/0 text-ink shadow-[inset_0_0_0_1px_rgb(129_140_248_/_0.22)]"
+                            : "text-muted hover:bg-white/5 hover:text-ink"
+                        }`;
+                      }}
+                    >
+                      {({ isActive: routeActive }) => {
+                        const isActive = isItemActive(item.to, routeActive, pathname);
+                        return (
+                        <>
+                          {isActive && (
+                            <span
+                              aria-hidden="true"
+                              className="absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand-400 shadow-[0_0_12px_2px_rgb(129_140_248_/_0.7)]"
+                            />
+                          )}
+                          <Icon
+                            size={18}
+                            strokeWidth={1.75}
+                            aria-hidden="true"
+                            className={`shrink-0 transition-colors duration-200 ${
+                              isActive
+                                ? "text-brand-300 drop-shadow-[0_0_6px_rgb(129_140_248_/_0.8)]"
+                                : "text-faint group-hover:text-muted"
+                            }`}
+                          />
+                          {item.label}
+                        </>
+                        );
+                      }}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      <p className="relative border-t border-white/10 px-5 py-3 text-[11px] text-faint">
+        Prototype build · Sepolia testnet
+      </p>
     </nav>
   );
 }

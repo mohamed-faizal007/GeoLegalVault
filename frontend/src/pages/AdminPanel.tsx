@@ -13,9 +13,9 @@ export default function AdminPanel() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Admin Panel</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">Admin Panel</h1>
 
-      <div className="flex gap-1 border-b border-slate-200">
+      <div className="flex gap-1 border-b border-white/10">
         {TABS.map((t) => (
           <button
             key={t}
@@ -23,8 +23,8 @@ export default function AdminPanel() {
             onClick={() => setTab(t)}
             className={`-mb-px px-4 py-2 text-sm font-medium transition-colors ${
               tab === t
-                ? "border-b-2 border-brand-600 text-brand-700"
-                : "border-b-2 border-transparent text-slate-500 hover:text-slate-700"
+                ? "border-b-2 border-brand-600 text-brand-300"
+                : "border-b-2 border-transparent text-muted hover:text-ink/90"
             }`}
           >
             {t}

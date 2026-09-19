@@ -12,9 +12,9 @@ import { formatDateTime } from "../lib/format";
 
 function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5 border-b border-slate-100 py-2 last:border-0">
-      <span className="text-xs uppercase tracking-wide text-slate-400">{label}</span>
-      <span className="break-all text-sm text-slate-700">{value}</span>
+    <div className="flex flex-col gap-0.5 border-b border-white/10 py-2 last:border-0">
+      <span className="text-xs uppercase tracking-wide text-faint">{label}</span>
+      <span className="break-all text-sm text-ink/90">{value}</span>
     </div>
   );
 }
@@ -43,7 +43,7 @@ export default function BlockchainVerification() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Blockchain Anchor Record</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">Blockchain Anchor Record</h1>
 
       <div className="card-pad">
         <Row label="Status" value={<StatusBadge status={anchor.status} />} />
@@ -60,7 +60,7 @@ export default function BlockchainVerification() {
 
       {anchor.onchain && (
         <div className="card-pad">
-          <h2 className="mb-1 text-sm font-semibold text-slate-800">Live on-chain read</h2>
+          <h2 className="mb-1 text-sm font-semibold text-ink">Live on-chain read</h2>
           <Row label="Exists on-chain" value={anchor.onchain.exists ? "Yes" : "No"} />
           <Row label="On-chain hash" value={<span className="font-mono">{anchor.onchain.hash}</span>} />
           <Row label="Block timestamp" value={anchor.onchain.ts} />

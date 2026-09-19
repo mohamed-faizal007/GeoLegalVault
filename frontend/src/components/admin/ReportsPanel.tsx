@@ -14,10 +14,10 @@ function StatCard({
   tone?: "default" | "good" | "bad";
 }) {
   const toneClass =
-    tone === "good" ? "text-emerald-600" : tone === "bad" ? "text-red-600" : "text-slate-900";
+    tone === "good" ? "text-emerald-300" : tone === "bad" ? "text-red-300" : "text-ink";
   return (
     <div className="card-pad">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-faint">{label}</p>
       <p className={`mt-1.5 text-2xl font-semibold ${toneClass}`}>{value}</p>
     </div>
   );
@@ -34,16 +34,16 @@ function BarChart({
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
     <div className="card-pad">
-      <h2 className="mb-3 text-sm font-semibold text-slate-800">{title}</h2>
-      {rows.length === 0 && <p className="text-sm text-slate-400">No data yet.</p>}
+      <h2 className="mb-3 text-sm font-semibold text-ink">{title}</h2>
+      {rows.length === 0 && <p className="text-sm text-faint">No data yet.</p>}
       <div className="space-y-2.5">
         {rows.map((row) => (
           <div key={row.label}>
-            <div className="mb-1 flex justify-between text-xs text-slate-500">
+            <div className="mb-1 flex justify-between text-xs text-muted">
               <span>{row.label.replaceAll("_", " ")}</span>
-              <span className="font-medium text-slate-700">{row.count}</span>
+              <span className="font-medium text-ink/90">{row.count}</span>
             </div>
-            <div className="h-2 rounded-full bg-slate-100">
+            <div className="h-2 rounded-full bg-white/5">
               <div
                 className="h-2 rounded-full bg-brand-500 transition-all"
                 style={{ width: `${(row.count / max) * 100}%` }}

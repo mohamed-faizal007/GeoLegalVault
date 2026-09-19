@@ -32,7 +32,7 @@ export default function Upload() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Upload a Document</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">Upload a Document</h1>
 
       <LocationGate>
         {(coords) => (

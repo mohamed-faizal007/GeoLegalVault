@@ -31,7 +31,7 @@ export default function AuditLogs() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Audit Logs</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">Audit Logs</h1>
 
       <div className="flex flex-wrap gap-3 card-pad">
         <input
@@ -87,17 +87,17 @@ export default function AuditLogs() {
                 <th className="px-4 py-2.5 font-medium">IP</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-white/10">
               {auditQuery.data.items.map((entry) => (
                 <tr key={entry.id} className="table-row-hover">
-                  <td className="whitespace-nowrap px-4 py-2.5 text-slate-500">
+                  <td className="whitespace-nowrap px-4 py-2.5 text-muted">
                     {formatDateTime(entry.created_at)}
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
+                  <td className="px-4 py-2.5 font-mono text-xs text-muted">
                     {entry.actor_id ?? "—"}
                   </td>
-                  <td className="px-4 py-2.5 font-medium text-slate-800">{entry.action}</td>
-                  <td className="px-4 py-2.5 text-slate-500">
+                  <td className="px-4 py-2.5 font-medium text-ink">{entry.action}</td>
+                  <td className="px-4 py-2.5 text-muted">
                     {entry.target_type}
                     {entry.target_id ? ` / ${entry.target_id}` : ""}
                   </td>
@@ -105,16 +105,16 @@ export default function AuditLogs() {
                     <span
                       className={`font-medium ${
                         entry.result === "SUCCESS"
-                          ? "text-emerald-600"
+                          ? "text-emerald-300"
                           : entry.result === "DENIED" || entry.result === "MISMATCH" || entry.result === "FAILED"
-                            ? "text-red-600"
-                            : "text-slate-500"
+                            ? "text-red-300"
+                            : "text-muted"
                       }`}
                     >
                       {entry.result}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-400">{entry.ip ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-xs text-faint">{entry.ip ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -123,7 +123,7 @@ export default function AuditLogs() {
       </div>
 
       {auditQuery.data && auditQuery.data.total > 0 && (
-        <div className="flex items-center justify-between text-sm text-slate-500">
+        <div className="flex items-center justify-between text-sm text-muted">
           <span>
             Page {page} of {totalPages} — {auditQuery.data.total} total
           </span>

@@ -49,7 +49,7 @@ export default function UserManagementPanel() {
   return (
     <div className="space-y-6">
       <form onSubmit={handleCreate} className="card space-y-3 p-4">
-        <h2 className="text-sm font-semibold text-slate-800">Create user</h2>
+        <h2 className="text-sm font-semibold text-ink">Create user</h2>
         <div className="grid grid-cols-2 gap-3">
           <input
             required
@@ -84,7 +84,7 @@ export default function UserManagementPanel() {
           </select>
         </div>
         <div>
-          <p className="mb-1 text-xs font-medium text-slate-500">Assigned geofences</p>
+          <p className="mb-1 text-xs font-medium text-muted">Assigned geofences</p>
           <select
             multiple
             value={fenceIds}
@@ -122,24 +122,24 @@ export default function UserManagementPanel() {
                 <th className="px-4 py-2.5 font-medium" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-white/10">
               {usersQuery.data.items.map((u) => (
                 <tr key={u.id} className="table-row-hover">
                   <td className="px-4 py-2.5">{u.email}</td>
                   <td className="px-4 py-2.5">{u.name}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{u.role}</td>
+                  <td className="px-4 py-2.5 text-muted">{u.role}</td>
                   <td className="px-4 py-2.5">
                     {u.is_active ? (
-                      <span className="text-emerald-600">Active</span>
+                      <span className="text-emerald-300">Active</span>
                     ) : (
-                      <span className="text-slate-400">Deactivated</span>
+                      <span className="text-faint">Deactivated</span>
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <button
                       type="button"
                       onClick={() => toggleActiveMutation.mutate({ id: u.id, isActive: u.is_active })}
-                      className="text-xs font-medium text-brand-600 underline hover:text-brand-700"
+                      className="text-xs font-medium text-brand-400 underline hover:text-brand-300"
                     >
                       {u.is_active ? "Deactivate" : "Reactivate"}
                     </button>

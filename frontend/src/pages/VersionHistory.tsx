@@ -27,7 +27,7 @@ export default function VersionHistory() {
         <Link to={`/documents/${documentId}`} className="link-muted text-xs">
           ← Back to document
         </Link>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
           Version history{docQuery.data ? `: ${docQuery.data.title}` : ""}
         </h1>
       </div>
@@ -46,27 +46,27 @@ export default function VersionHistory() {
               <li key={version.id} className="card-pad">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-800">V{version.version_no}</span>
+                    <span className="text-sm font-semibold text-ink">V{version.version_no}</span>
                     <StatusBadge status={version.status} />
                     {version.anchored && <StatusBadge status="CONFIRMED" />}
                   </div>
-                  <span className="text-xs text-slate-400">{formatDateTime(version.uploaded_at)}</span>
+                  <span className="text-xs text-faint">{formatDateTime(version.uploaded_at)}</span>
                 </div>
-                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-500 md:grid-cols-4">
+                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-muted md:grid-cols-4">
                   <div>
-                    <dt className="uppercase tracking-wide text-slate-400">SHA-256</dt>
+                    <dt className="uppercase tracking-wide text-faint">SHA-256</dt>
                     <dd className="mt-0.5 font-mono">{truncateHash(version.sha256)}</dd>
                   </div>
                   <div>
-                    <dt className="uppercase tracking-wide text-slate-400">Size</dt>
+                    <dt className="uppercase tracking-wide text-faint">Size</dt>
                     <dd className="mt-0.5">{formatBytes(version.size_bytes)}</dd>
                   </div>
                   <div>
-                    <dt className="uppercase tracking-wide text-slate-400">MIME</dt>
+                    <dt className="uppercase tracking-wide text-faint">MIME</dt>
                     <dd className="mt-0.5">{version.mime}</dd>
                   </div>
                   <div>
-                    <dt className="uppercase tracking-wide text-slate-400">Prev. hash</dt>
+                    <dt className="uppercase tracking-wide text-faint">Prev. hash</dt>
                     <dd className="mt-0.5 font-mono">
                       {version.prev_version_hash ? truncateHash(version.prev_version_hash) : "—"}
                     </dd>

@@ -79,7 +79,7 @@ export default function GeofenceManagementPanel() {
   return (
     <div className="space-y-6">
       <form onSubmit={handleSubmit} className="card space-y-3 p-4">
-        <h2 className="text-sm font-semibold text-slate-800">Create geofence</h2>
+        <h2 className="text-sm font-semibold text-ink">Create geofence</h2>
         <input
           required
           placeholder="Name"
@@ -88,7 +88,7 @@ export default function GeofenceManagementPanel() {
           className="input"
         />
         <div>
-          <p className="mb-1 text-xs font-medium text-slate-500">
+          <p className="mb-1 text-xs font-medium text-muted">
             Polygon ring — an array of [longitude, latitude] pairs (GeoJSON order; closes
             automatically if you omit the repeated first point)
           </p>
@@ -122,25 +122,25 @@ export default function GeofenceManagementPanel() {
                 <th className="px-4 py-2.5 font-medium" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-white/10">
               {geofencesQuery.data.items.map((fence) => (
                 <tr key={fence.id} className="table-row-hover">
                   <td className="px-4 py-2.5">{fence.name}</td>
-                  <td className="px-4 py-2.5 text-slate-500">
+                  <td className="px-4 py-2.5 text-muted">
                     {fence.region.coordinates[0]?.length ?? 0}
                   </td>
                   <td className="px-4 py-2.5">
                     {fence.active ? (
-                      <span className="text-emerald-600">Active</span>
+                      <span className="text-emerald-300">Active</span>
                     ) : (
-                      <span className="text-slate-400">Deactivated</span>
+                      <span className="text-faint">Deactivated</span>
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <button
                       type="button"
                       onClick={() => toggleActiveMutation.mutate({ id: fence.id, active: fence.active })}
-                      className="text-xs font-medium text-brand-600 underline hover:text-brand-700"
+                      className="text-xs font-medium text-brand-400 underline hover:text-brand-300"
                     >
                       {fence.active ? "Deactivate" : "Reactivate"}
                     </button>

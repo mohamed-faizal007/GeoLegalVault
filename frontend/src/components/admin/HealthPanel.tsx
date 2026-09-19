@@ -5,9 +5,9 @@ import ErrorBanner from "../ErrorBanner";
 import Spinner from "../Spinner";
 
 function statusColor(value: string): string {
-  if (value === "ok" || value === "reachable") return "text-emerald-600";
-  if (value === "degraded") return "text-amber-600";
-  return "text-red-600";
+  if (value === "ok" || value === "reachable") return "text-emerald-300";
+  if (value === "degraded") return "text-amber-300";
+  return "text-red-300";
 }
 
 export default function HealthPanel() {
@@ -32,7 +32,7 @@ export default function HealthPanel() {
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
       {rows.map(([label, value]) => (
         <div key={label} className="card-pad">
-          <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
+          <p className="text-xs uppercase tracking-wide text-faint">{label}</p>
           <p className={`mt-1.5 text-sm font-semibold ${statusColor(value)}`}>{value}</p>
         </div>
       ))}

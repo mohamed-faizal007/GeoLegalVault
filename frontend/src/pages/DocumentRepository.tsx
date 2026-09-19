@@ -49,7 +49,7 @@ export default function DocumentRepository() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Document Repository</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Document Repository</h1>
       </div>
 
       <div className="flex flex-wrap gap-3 card-pad">
@@ -112,24 +112,24 @@ export default function DocumentRepository() {
                 <th className="px-4 py-2.5 font-medium">Updated</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-white/10">
               {documentsQuery.data.items.map((doc) => (
                 <tr key={doc.id} className="table-row-hover">
                   <td className="px-4 py-3">
-                    <Link to={`/documents/${doc.id}`} className="font-medium text-slate-800 hover:text-brand-700 hover:underline">
+                    <Link to={`/documents/${doc.id}`} className="font-medium text-ink hover:text-brand-300 hover:underline">
                       {doc.title}
                     </Link>
                     {doc.integrity_flag === "TAMPERED" && (
-                      <span className="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">
+                      <span className="ml-2 inline-flex items-center rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-300 ring-1 ring-inset ring-red-400/30">
                         TAMPERED
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-500">{doc.doc_type}</td>
+                  <td className="px-4 py-3 text-muted">{doc.doc_type}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={doc.status} />
                   </td>
-                  <td className="px-4 py-3 text-slate-500">{formatDateTime(doc.updated_at)}</td>
+                  <td className="px-4 py-3 text-muted">{formatDateTime(doc.updated_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -138,7 +138,7 @@ export default function DocumentRepository() {
       </div>
 
       {documentsQuery.data && documentsQuery.data.total > 0 && (
-        <div className="flex items-center justify-between text-sm text-slate-500">
+        <div className="flex items-center justify-between text-sm text-muted">
           <span>
             Page {page} of {totalPages} — {documentsQuery.data.total} total
           </span>

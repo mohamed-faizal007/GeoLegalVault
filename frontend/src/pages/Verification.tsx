@@ -7,15 +7,15 @@ import Spinner from "../components/Spinner";
 import { formatDateTime } from "../lib/format";
 
 const RESULT_STYLES: Record<VerificationResult, string> = {
-  VERIFIED: "bg-emerald-50 border-emerald-300 text-emerald-800",
-  MISMATCH: "bg-red-50 border-red-300 text-red-800",
-  NOT_ANCHORED: "bg-slate-50 border-slate-300 text-slate-700",
+  VERIFIED: "bg-emerald-500/10 border-emerald-400/30 text-emerald-200",
+  MISMATCH: "bg-red-500/10 border-red-400/30 text-red-200",
+  NOT_ANCHORED: "bg-white/5 border-white/15 text-ink/90",
 };
 
 const RESULT_ICON_STYLES: Record<VerificationResult, string> = {
-  VERIFIED: "bg-emerald-100 text-emerald-600",
-  MISMATCH: "bg-red-100 text-red-600",
-  NOT_ANCHORED: "bg-slate-200 text-slate-500",
+  VERIFIED: "bg-emerald-500/20 text-emerald-300",
+  MISMATCH: "bg-red-500/20 text-red-300",
+  NOT_ANCHORED: "bg-white/10 text-muted",
 };
 
 const RESULT_HEADLINE: Record<VerificationResult, string> = {
@@ -42,9 +42,9 @@ function ResultIcon({ result }: { result: VerificationResult }) {
 
 function HashRow({ label, value }: { label: string; value: string | null }) {
   return (
-    <div className="flex flex-col gap-0.5 border-b border-slate-100 py-2.5 last:border-0">
-      <span className="text-xs uppercase tracking-wide text-slate-400">{label}</span>
-      <span className="break-all font-mono text-xs text-slate-700">{value ?? "— not available —"}</span>
+    <div className="flex flex-col gap-0.5 border-b border-white/10 py-2.5 last:border-0">
+      <span className="text-xs uppercase tracking-wide text-faint">{label}</span>
+      <span className="break-all font-mono text-xs text-ink/90">{value ?? "— not available —"}</span>
     </div>
   );
 }
@@ -90,8 +90,8 @@ export default function Verification() {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Integrity Verification</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Integrity Verification</h1>
+        <p className="mt-0.5 text-sm text-muted">
           Recomputes the SHA-256 of the stored file and compares it against the hash saved at
           upload time and the hash anchored on-chain.
         </p>
@@ -112,7 +112,7 @@ export default function Verification() {
 
       {display && (
         <div className="card-pad">
-          <h2 className="mb-1 text-sm font-semibold text-slate-800">3-way hash comparison</h2>
+          <h2 className="mb-1 text-sm font-semibold text-ink">3-way hash comparison</h2>
           <HashRow label="Recomputed (current file bytes)" value={display.recomputed} />
           <HashRow label="Stored (recorded at upload)" value={display.stored} />
           <HashRow label="On-chain (Sepolia)" value={display.onchain} />
@@ -122,14 +122,14 @@ export default function Verification() {
                 href={display.etherscanUrl ?? "#"}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs font-medium text-brand-600 underline hover:text-brand-700"
+                className="text-xs font-medium text-brand-400 underline hover:text-brand-300"
               >
                 View transaction on Etherscan
               </a>
             </div>
           )}
           {!display.txHash && (
-            <p className="mt-2 text-xs text-slate-400">
+            <p className="mt-2 text-xs text-faint">
               Run a fresh verification above to see the transaction link for this result.
             </p>
           )}
@@ -138,7 +138,7 @@ export default function Verification() {
 
       <div className="card">
         <div className="card-header">
-          <h2 className="text-sm font-semibold text-slate-800">Verification history</h2>
+          <h2 className="text-sm font-semibold text-ink">Verification history</h2>
         </div>
         {historyQuery.isLoading && <Spinner label="Loading history…" />}
         {historyQuery.error && (
@@ -147,16 +147,16 @@ export default function Verification() {
           </div>
         )}
         {historyQuery.data && historyQuery.data.items.length === 0 && (
-          <p className="px-4 py-6 text-sm text-slate-400">No verification runs yet.</p>
+          <p className="px-4 py-6 text-sm text-faint">No verification runs yet.</p>
         )}
         {historyQuery.data && historyQuery.data.items.length > 0 && (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-white/10">
             {historyQuery.data.items.map((record) => (
               <li key={record.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                <span className={`font-medium ${record.result === "VERIFIED" ? "text-emerald-600" : record.result === "MISMATCH" ? "text-red-600" : "text-slate-500"}`}>
+                <span className={`font-medium ${record.result === "VERIFIED" ? "text-emerald-300" : record.result === "MISMATCH" ? "text-red-300" : "text-muted"}`}>
                   {record.result}
                 </span>
-                <span className="text-xs text-slate-400">{formatDateTime(record.created_at)}</span>
+                <span className="text-xs text-faint">{formatDateTime(record.created_at)}</span>
               </li>
             ))}
           </ul>

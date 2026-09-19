@@ -58,7 +58,7 @@ describe("Verification page", () => {
 
     const banner = await screen.findByText("VERIFIED");
     expect(banner).toBeInTheDocument();
-    expect(banner.closest("div")).toHaveClass("bg-emerald-50");
+    expect(banner.closest("div")).toHaveClass("bg-emerald-500/10");
   });
 
   it("renders a red MISMATCH banner when the hashes disagree", async () => {
@@ -72,7 +72,7 @@ describe("Verification page", () => {
 
     const banner = await screen.findByText(/MISMATCH/);
     expect(banner).toBeInTheDocument();
-    expect(banner.closest("div")).toHaveClass("bg-red-50");
+    expect(banner.closest("div")).toHaveClass("bg-red-500/10");
   });
 
   it("renders a neutral NOT ANCHORED state without treating it as an error", async () => {
@@ -86,6 +86,6 @@ describe("Verification page", () => {
 
     const banner = await screen.findByText(/NOT ANCHORED/);
     expect(banner).toBeInTheDocument();
-    expect(banner.closest("div")).toHaveClass("bg-slate-50");
+    expect(banner.closest("div")).toHaveClass("bg-white/5");
   });
 });
