@@ -44,6 +44,9 @@ async def ensure_indexes() -> None:
     await db["users"].create_index("email", unique=True)
     await db["refresh_sessions"].create_index("jti", unique=True)
     await db["refresh_sessions"].create_index("family")
+    # TTL cleanup for stale login-rate-limit docs; the login flow itself
+    # checks expires_at directly and doesn't depend on the sweep's timing.
+    await db["login_rate_limits"].create_index("expires_at", expireAfterSeconds=0)
     await db["geofences"].create_index([("region", "2dsphere")])
     await db["geofences"].create_index([("center", "2dsphere")])
 

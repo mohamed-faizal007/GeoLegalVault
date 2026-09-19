@@ -1,5 +1,7 @@
+import httpx
 import pytest
 
+from app.main import app
 from app.modules.users.models import Role
 from app.modules.users.schemas import UserCreate
 from app.modules.users.service import create_user
@@ -112,3 +114,87 @@ async def test_reused_refresh_token_revokes_family(client, db):
 async def test_refresh_without_cookie_rejected(client, db):
     response = await client.post("/api/v1/auth/refresh")
     assert response.status_code == 401
+
+
+async def test_login_rate_limited_after_five_failures(client, db):
+    await _make_user(db)
+
+    for _ in range(5):
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "officer@example.com", "password": "wrong-password"},
+        )
+        assert response.status_code == 401
+
+    # 6th attempt within the window is rate-limited even with the correct
+    # password — the lockout gates the account, not just bad credentials.
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "officer@example.com", "password": "Str0ngPassw0rd!"},
+    )
+    assert response.status_code == 429
+    assert response.json()["detail"] == "Invalid email or password"
+
+
+async def test_login_rate_limit_is_shared_across_instances(client, db):
+    """The counter lives in Mongo, not process memory — a second
+    "instance" (a fresh ASGI client hitting the same shared test DB)
+    must see the same lockout state instead of starting a fresh count."""
+    await _make_user(db)
+
+    for _ in range(5):
+        await client.post(
+            "/api/v1/auth/login",
+            json={"email": "officer@example.com", "password": "wrong-password"},
+        )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as other_client:
+        response = await other_client.post(
+            "/api/v1/auth/login",
+            json={"email": "officer@example.com", "password": "Str0ngPassw0rd!"},
+        )
+    assert response.status_code == 429
+
+
+async def test_login_success_resets_failure_count(client, db):
+    await _make_user(db)
+
+    for _ in range(4):
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "officer@example.com", "password": "wrong-password"},
+        )
+        assert response.status_code == 401
+
+    success = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "officer@example.com", "password": "Str0ngPassw0rd!"},
+    )
+    assert success.status_code == 200
+
+    # The counter was reset on success, so a fresh run of failures doesn't
+    # inherit the previous 4 and immediately trip the limiter.
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "officer@example.com", "password": "wrong-password"},
+    )
+    assert response.status_code == 401
+
+
+async def test_login_rate_limit_is_per_email(client, db):
+    await _make_user(db, email="officer@example.com")
+    await _make_user(db, email="other@example.com")
+
+    for _ in range(5):
+        await client.post(
+            "/api/v1/auth/login",
+            json={"email": "officer@example.com", "password": "wrong-password"},
+        )
+
+    # A different email's attempts are untouched by officer@example.com's lockout.
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "other@example.com", "password": "Str0ngPassw0rd!"},
+    )
+    assert response.status_code == 200

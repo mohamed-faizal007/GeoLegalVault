@@ -1,14 +1,12 @@
 """auth module service layer — login, refresh rotation, logout.
 
-Rate limiting is an in-memory per-process stub (fine for the single-instance
-prototype target; a distributed deployment would need a shared store like
-Redis instead).
+Login rate limiting is backed by a MongoDB collection (login_rate_limits),
+not in-process memory, so the 5-attempts/60s lockout is shared across every
+backend instance/pod rather than being bypassable by hitting a different one.
 """
 
 import logging
-import time
 import uuid
-from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -30,7 +28,7 @@ _logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 5
 _WINDOW_SEC = 60.0
-_failed_attempts: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT_COLLECTION = "login_rate_limits"
 
 
 class InvalidCredentials(Exception):
@@ -49,20 +47,55 @@ class InvalidRefreshToken(Exception):
     pass
 
 
-def _check_rate_limit(email: str) -> None:
-    now = time.monotonic()
-    attempts = [t for t in _failed_attempts[email] if now - t < _WINDOW_SEC]
-    _failed_attempts[email] = attempts
-    if len(attempts) >= _MAX_ATTEMPTS:
+async def _check_rate_limit(db: AsyncIOMotorDatabase, email: str) -> None:
+    doc = await db[_RATE_LIMIT_COLLECTION].find_one({"_id": email})
+    if doc is None:
+        return
+    now = datetime.now(UTC)
+    # Motor/BSON hands back a naive datetime (UTC) by default; normalize
+    # before comparing against the aware `now` to avoid a TypeError.
+    stored_expiry = doc["expires_at"]
+    if stored_expiry.tzinfo is None:
+        stored_expiry = stored_expiry.replace(tzinfo=UTC)
+    if stored_expiry > now and doc["count"] >= _MAX_ATTEMPTS:
         raise RateLimited(email)
 
 
-def _record_failure(email: str) -> None:
-    _failed_attempts[email].append(time.monotonic())
+async def _record_failure(db: AsyncIOMotorDatabase, email: str) -> None:
+    """Atomic INCR-with-expiry: within an active window, increments the
+    counter; once the window has lapsed, starts a fresh one. The single
+    find_one_and_update pipeline avoids a read-modify-write race between
+    concurrent requests for the same email (across processes/instances)."""
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(seconds=_WINDOW_SEC)
+    await db[_RATE_LIMIT_COLLECTION].find_one_and_update(
+        {"_id": email},
+        [
+            {
+                "$set": {
+                    "count": {
+                        "$cond": [
+                            {"$gt": ["$expires_at", now]},
+                            {"$add": ["$count", 1]},
+                            1,
+                        ]
+                    },
+                    "expires_at": {
+                        "$cond": [
+                            {"$gt": ["$expires_at", now]},
+                            "$expires_at",
+                            expires_at,
+                        ]
+                    },
+                }
+            }
+        ],
+        upsert=True,
+    )
 
 
-def _reset_failures(email: str) -> None:
-    _failed_attempts.pop(email, None)
+async def _reset_failures(db: AsyncIOMotorDatabase, email: str) -> None:
+    await db[_RATE_LIMIT_COLLECTION].delete_one({"_id": email})
 
 
 async def _issue_session(db: AsyncIOMotorDatabase, user: dict) -> tuple[str, str]:
@@ -89,7 +122,7 @@ async def login(
     """Returns (user_doc, access_token, refresh_token). Raises on failure."""
     email = email.lower()
     try:
-        _check_rate_limit(email)
+        await _check_rate_limit(db, email)
     except RateLimited:
         _logger.warning("auth: login rate-limited", extra={"email": email, "ip": ip})
         await audit.record(
@@ -104,7 +137,7 @@ async def login(
 
     user = await users_service.get_user_by_email(db, email)
     if user is None or not verify_password(password, user["password_hash"]):
-        _record_failure(email)
+        await _record_failure(db, email)
         _logger.warning("auth: login failed", extra={"email": email, "ip": ip})
         await audit.record(
             actor_id=email,
@@ -128,7 +161,7 @@ async def login(
         )
         raise AccountDisabled(email)
 
-    _reset_failures(email)
+    await _reset_failures(db, email)
     await users_service.record_login(db, user["_id"])
 
     access_token, refresh_token = await _issue_session(db, user)
