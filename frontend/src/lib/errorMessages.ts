@@ -8,7 +8,8 @@
 import { ApiError } from "../api/http";
 
 const CODE_MESSAGES: Record<string, string> = {
-  GEOFENCE_DENIED: "This action isn't permitted from your current location.",
+  GEOFENCE_DENIED:
+    "This action isn't permitted from your current location. If you expected to be inside a geofence, ask an administrator to check that your account has an assigned geofence.",
   LOCATION_LOW_CONFIDENCE:
     "Your location signal isn't accurate enough for this action. Try again somewhere with a clearer GPS/network signal.",
   LOCATION_STALE: "Your location reading is too old. Refresh your location and try again.",

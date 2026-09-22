@@ -111,3 +111,114 @@ async def test_deactivated_user_cannot_authenticate_protected_route(client, db):
 
     response = await client.get("/api/v1/users", headers=_auth(temp_token))
     assert response.status_code == 403
+
+
+async def _admin_id(db) -> str:
+    doc = await db["users"].find_one({"email": ADMIN_EMAIL})
+    return str(doc["_id"])
+
+
+async def test_admin_can_edit_role_name_and_geofences(client, db):
+    token = await _admin_token(client, db)
+    create_resp = await client.post(
+        "/api/v1/users",
+        headers=_auth(token),
+        json={
+            "email": "edit@example.com",
+            "password": "Str0ngPassw0rd!",
+            "name": "Before",
+            "role": "AUTHORIZED_STAFF",
+        },
+    )
+    user_id = create_resp.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/users/{user_id}",
+        headers=_auth(token),
+        json={"name": "After", "role": "LEGAL_OFFICER", "assigned_geofence_ids": ["abc123"]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert (body["name"], body["role"], body["assigned_geofence_ids"]) == (
+        "After",
+        "LEGAL_OFFICER",
+        ["abc123"],
+    )
+
+
+async def test_user_update_is_audited_without_name(client, db):
+    token = await _admin_token(client, db)
+    create_resp = await client.post(
+        "/api/v1/users",
+        headers=_auth(token),
+        json={
+            "email": "audited@example.com",
+            "password": "Str0ngPassw0rd!",
+            "name": "Secret Name",
+            "role": "AUTHORIZED_STAFF",
+        },
+    )
+    user_id = create_resp.json()["id"]
+    await client.patch(
+        f"/api/v1/users/{user_id}",
+        headers=_auth(token),
+        json={"name": "Renamed Person", "role": "AUDITOR"},
+    )
+
+    entry = await db["audit_logs"].find_one({"action": "USER_UPDATE"})
+    assert entry is not None
+    assert entry["meta"]["fields"] == ["name", "role"]
+    assert entry["meta"]["role"] == "AUDITOR"
+    assert "Renamed Person" not in str(entry["meta"])
+
+
+async def test_admin_cannot_demote_or_deactivate_self(client, db):
+    token = await _admin_token(client, db)
+    admin_id = await _admin_id(db)
+
+    demote = await client.patch(
+        f"/api/v1/users/{admin_id}", headers=_auth(token), json={"role": "AUDITOR"}
+    )
+    assert demote.status_code == 409
+    assert demote.json()["error"]["code"] == "SELF_LOCKOUT"
+
+    deactivate = await client.patch(
+        f"/api/v1/users/{admin_id}", headers=_auth(token), json={"is_active": False}
+    )
+    assert deactivate.status_code == 409
+
+    still_admin = await db["users"].find_one({"email": ADMIN_EMAIL})
+    assert still_admin["role"] == "ADMINISTRATOR"
+    assert still_admin["is_active"] is True
+
+
+async def test_admin_can_still_edit_own_name_and_geofences(client, db):
+    token = await _admin_token(client, db)
+    admin_id = await _admin_id(db)
+    resp = await client.patch(
+        f"/api/v1/users/{admin_id}",
+        headers=_auth(token),
+        json={"name": "Renamed Admin", "role": "ADMINISTRATOR", "assigned_geofence_ids": ["g1"]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Renamed Admin"
+
+
+async def test_non_admin_cannot_edit_users(client, db):
+    admin_token = await _admin_token(client, db)
+    create_resp = await client.post(
+        "/api/v1/users",
+        headers=_auth(admin_token),
+        json={
+            "email": "plain@example.com",
+            "password": "Str0ngPassw0rd!",
+            "name": "Plain",
+            "role": "AUDITOR",
+        },
+    )
+    user_id = create_resp.json()["id"]
+    _u, plain_token, _r = await login(db, "plain@example.com", "Str0ngPassw0rd!")
+    resp = await client.patch(
+        f"/api/v1/users/{user_id}", headers=_auth(plain_token), json={"role": "ADMINISTRATOR"}
+    )
+    assert resp.status_code == 403

@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { listDocuments } from "../api/documents";
 import EmptyState from "../components/EmptyState";
 import ErrorBanner from "../components/ErrorBanner";
 import Spinner from "../components/Spinner";
 import StatusBadge from "../components/StatusBadge";
+import { useAuth } from "../context/useAuth";
 import { formatDateTime } from "../lib/format";
 
 const STATUS_OPTIONS = [
@@ -27,21 +27,43 @@ const STATUS_OPTIONS = [
 const LIMIT = 20;
 
 export default function DocumentRepository() {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("");
-  const [docType, setDocType] = useState("");
-  const [page, setPage] = useState(1);
+  // Filters live in the URL so dashboard queue cards can deep-link here
+  // (e.g. /documents?status=SUBMITTED) and Back restores the filter.
+  const [params, setParams] = useSearchParams();
+  const { user } = useAuth();
+  const query = params.get("query") ?? "";
+  const status = params.get("status") ?? "";
+  const docType = params.get("doc_type") ?? "";
+  const owner = params.get("owner") ?? "";
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  // `owner=me` is a link convenience resolved to the signed-in user's id here.
+  const ownerId = owner === "me" ? user?.id : owner || undefined;
+
+  function setFilter(key: string, value: string) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set(key, value);
+        else next.delete(key);
+        if (key !== "page") next.delete("page");
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
   const documentsQuery = useQuery({
-    queryKey: ["documents", "list", { query, status, docType, page }],
+    queryKey: ["documents", "list", { query, status, docType, ownerId, page }],
     queryFn: () =>
       listDocuments({
         query: query || undefined,
         status: status || undefined,
         doc_type: docType || undefined,
+        owner: ownerId,
         page,
         limit: LIMIT,
       }),
+    enabled: owner !== "me" || !!user,
   });
 
   const totalPages = documentsQuery.data ? Math.max(1, Math.ceil(documentsQuery.data.total / LIMIT)) : 1;
@@ -55,19 +77,13 @@ export default function DocumentRepository() {
       <div className="flex flex-wrap gap-3 card-pad">
         <input
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setPage(1);
-          }}
+          onChange={(e) => setFilter("query", e.target.value)}
           placeholder="Search title or tags…"
           className="input min-w-[200px] flex-1"
         />
         <select
           value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(1);
-          }}
+          onChange={(e) => setFilter("status", e.target.value)}
           className="input w-auto"
         >
           {STATUS_OPTIONS.map((s) => (
@@ -78,13 +94,20 @@ export default function DocumentRepository() {
         </select>
         <input
           value={docType}
-          onChange={(e) => {
-            setDocType(e.target.value);
-            setPage(1);
-          }}
+          onChange={(e) => setFilter("doc_type", e.target.value)}
           placeholder="Doc type…"
           className="input w-40"
         />
+        {owner && (
+          <button
+            type="button"
+            onClick={() => setFilter("owner", "")}
+            className="btn-secondary btn-sm"
+            aria-label="Clear owner filter"
+          >
+            {owner === "me" ? "My documents" : "One owner"} ✕
+          </button>
+        )}
       </div>
 
       <div className="card overflow-hidden">
@@ -146,7 +169,7 @@ export default function DocumentRepository() {
             <button
               type="button"
               disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setFilter("page", String(Math.max(1, page - 1)))}
               className="btn-secondary btn-sm"
             >
               Previous
@@ -154,7 +177,7 @@ export default function DocumentRepository() {
             <button
               type="button"
               disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => setFilter("page", String(page + 1))}
               className="btn-secondary btn-sm"
             >
               Next

@@ -185,7 +185,7 @@ export default function Dashboard() {
               loading={myDraftsQuery.isLoading}
               hint="Drafts you own"
               icon={PencilLine}
-              to="/documents"
+              to="/documents?status=DRAFT&owner=me"
             />
           )}
           {queueStatus && (
@@ -197,7 +197,7 @@ export default function Dashboard() {
                 queueStatus === "SUBMITTED" ? "Submitted, ready to review" : "Reviewed, ready to approve"
               }
               icon={ClipboardCheck}
-              to="/documents"
+              to={`/documents?status=${queueStatus}`}
             />
           )}
           <LocationCard loading={geo.loading} accuracy={geo.coords ? geo.coords.accuracy : null} />

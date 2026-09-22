@@ -90,10 +90,20 @@ async def upload_document(
             if not has_permission(user["role"], DOCUMENT_AMEND):
                 raise RBACError("FORBIDDEN", f"Missing required permission: {DOCUMENT_AMEND}")
             document = await _get_document_or_404(db, amend_of)
-            if document["status"] != DocumentStatus.AMENDMENT_REQUESTED.value:
+            # Accepted as a new version either when an amendment was
+            # requested off an ACTIVE document, or when the document looped
+            # back to DRAFT after a review requested changes (review_feedback
+            # is only ever set by that path) — a fresh, never-submitted DRAFT
+            # does not qualify (D-015).
+            is_amendment_ready = document["status"] == DocumentStatus.AMENDMENT_REQUESTED.value
+            is_correction_ready = (
+                document["status"] == DocumentStatus.DRAFT.value
+                and document.get("review_feedback") is not None
+            )
+            if not (is_amendment_ready or is_correction_ready):
                 raise workflow.IllegalTransition(
-                    "document must be AMENDMENT_REQUESTED to accept a new version "
-                    f"(current status: {document['status']})"
+                    "document must be AMENDMENT_REQUESTED, or DRAFT with changes requested, "
+                    f"to accept a new version (current status: {document['status']})"
                 )
             result = await service.create_next_version(
                 db,

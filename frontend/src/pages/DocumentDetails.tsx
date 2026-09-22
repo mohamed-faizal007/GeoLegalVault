@@ -7,6 +7,7 @@ import {
   archiveDocument,
   downloadDocument,
   getDocument,
+  listVersions,
   reviewDocument,
   submitDocument,
 } from "../api/documents";
@@ -56,6 +57,24 @@ export default function DocumentDetails() {
     queryFn: () => getDocument(documentId),
   });
 
+  // The version being processed is the highest version_no — the same rule the
+  // backend uses. Its uploader can neither review nor approve it (maker != checker),
+  // and only its uploader may submit it (D-016) — so we fetch versions when
+  // any of those could apply.
+  const roleForQueue = user?.role;
+  const maybeCheckable =
+    (docQuery.data?.status === "SUBMITTED" &&
+      hasPermission(roleForQueue, PERMISSIONS.REVIEW_PERFORM)) ||
+    (docQuery.data?.status === "PENDING_APPROVAL" &&
+      hasPermission(roleForQueue, PERMISSIONS.APPROVE_PERFORM));
+  const maybeSubmittable =
+    docQuery.data?.status === "DRAFT" && hasPermission(roleForQueue, PERMISSIONS.DOCUMENT_SUBMIT);
+  const versionsQuery = useQuery({
+    queryKey: ["versions", documentId],
+    queryFn: () => listVersions(documentId),
+    enabled: maybeCheckable || maybeSubmittable,
+  });
+
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["document", documentId] });
     queryClient.invalidateQueries({ queryKey: ["versions", documentId] });
@@ -102,15 +121,44 @@ export default function DocumentDetails() {
 
   const doc = docQuery.data;
   const role = user?.role;
-  const isOwner = user?.id === doc.owner_id;
 
-  const canSubmit = isOwner && doc.status === "DRAFT" && hasPermission(role, PERMISSIONS.DOCUMENT_SUBMIT);
-  const canReview = doc.status === "SUBMITTED" && hasPermission(role, PERMISSIONS.REVIEW_PERFORM);
+  const versions = versionsQuery.data?.items ?? [];
+  const latestVersion = versions.reduce<(typeof versions)[number] | null>(
+    (best, v) => (best === null || v.version_no > best.version_no ? v : best),
+    null,
+  );
+  // Fail closed while versions load: no button beats a button that will 403.
+  const isUploader = latestVersion !== null && latestVersion.uploaded_by === user?.id;
+  const checkerReady = latestVersion !== null && !isUploader;
+  // Submit is authorized by the current version's uploader, not
+  // document.owner_id (D-016) — an amendment/correction can be uploaded by
+  // someone other than the document's original owner.
+  const canSubmit =
+    doc.status === "DRAFT" &&
+    isUploader &&
+    hasPermission(role, PERMISSIONS.DOCUMENT_SUBMIT);
+  const canReview =
+    doc.status === "SUBMITTED" && hasPermission(role, PERMISSIONS.REVIEW_PERFORM) && checkerReady;
   const canApprove =
-    doc.status === "PENDING_APPROVAL" && hasPermission(role, PERMISSIONS.APPROVE_PERFORM);
+    doc.status === "PENDING_APPROVAL" &&
+    hasPermission(role, PERMISSIONS.APPROVE_PERFORM) &&
+    checkerReady;
+  const blockedAsUploader = maybeCheckable && isUploader;
+  const blockedFromSubmit =
+    maybeSubmittable && latestVersion !== null && !isUploader;
   const canAmend = doc.status === "ACTIVE" && hasPermission(role, PERMISSIONS.DOCUMENT_AMEND);
-  const canArchive =
-    ["ACTIVE", "SUPERSEDED"].includes(doc.status) && hasPermission(role, PERMISSIONS.DOCUMENT_ARCHIVE);
+  // Amendment was requested but the corrected file hasn't been uploaded yet —
+  // the amend page shows the upload form in this state.
+  const canUploadAmendment =
+    doc.status === "AMENDMENT_REQUESTED" && hasPermission(role, PERMISSIONS.DOCUMENT_AMEND);
+  // A2 (D-015/D-017): changes were requested, looping the document back to
+  // DRAFT — the amend page's upload form also accepts a corrected file here.
+  const canUploadCorrection =
+    doc.status === "DRAFT" &&
+    doc.review_feedback != null &&
+    hasPermission(role, PERMISSIONS.DOCUMENT_AMEND);
+  // Backend only archives ACTIVE documents (workflow.archive); SUPERSEDED would 409.
+  const canArchive = doc.status === "ACTIVE" && hasPermission(role, PERMISSIONS.DOCUMENT_ARCHIVE);
   const canDownload = !!doc.current_version_id && hasPermission(role, PERMISSIONS.DOCUMENT_VIEW);
   const canVerify = !!doc.current_version_id && hasPermission(role, PERMISSIONS.VERIFY_PERFORM);
 
@@ -153,6 +201,18 @@ export default function DocumentDetails() {
         </div>
       </div>
 
+      {doc.review_feedback && doc.status === "DRAFT" && (
+        <div
+          role="note"
+          className="rounded-md border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">
+            Changes requested · {formatDateTime(doc.review_feedback.reviewed_at)}
+          </p>
+          <p className="mt-1 whitespace-pre-wrap">{doc.review_feedback.comment}</p>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {canSubmit && (
           <ActionButton
@@ -174,6 +234,20 @@ export default function DocumentDetails() {
         )}
         {canAmend && (
           <ActionButton label="Request amendment" onClick={() => navigate(`/documents/${documentId}/amend`)} />
+        )}
+        {canUploadAmendment && (
+          <ActionButton
+            label="Upload amended version"
+            variant="primary"
+            onClick={() => navigate(`/documents/${documentId}/amend`)}
+          />
+        )}
+        {canUploadCorrection && (
+          <ActionButton
+            label="Upload corrected file"
+            variant="primary"
+            onClick={() => navigate(`/documents/${documentId}/amend`)}
+          />
         )}
         {canArchive && (
           <ActionButton
@@ -202,13 +276,24 @@ export default function DocumentDetails() {
         </Link>
       </div>
 
+      {blockedAsUploader && (
+        <p className="text-sm text-muted">
+          You uploaded this version, so someone else must {doc.status === "SUBMITTED" ? "review" : "approve"} it.
+        </p>
+      )}
+      {blockedFromSubmit && (
+        <p className="text-sm text-muted">
+          Only whoever uploaded the current version can submit it for review.
+        </p>
+      )}
+
       {reviewOpen && (
         <div className="card-pad">
           <h2 className="text-sm font-semibold text-ink">Review decision</h2>
           <textarea
             value={reviewComment}
             onChange={(e) => setReviewComment(e.target.value)}
-            placeholder="Comment (required if requesting changes)"
+            placeholder="Comment (required if requesting changes) — visible to everyone who can view this document; no personal data"
             className="input mt-2"
             rows={3}
           />

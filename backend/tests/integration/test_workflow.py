@@ -239,6 +239,124 @@ async def test_changes_requested_loops_to_draft(client, db):
     versions = await _get_versions(client, uploader, document_id)
     assert versions[0]["status"] == "DRAFT"
 
+    # The submitter can read the reviewer's comment without audit access...
+    assert document["review_feedback"]["comment"] == "fix clause 4"
+    assert document["review_feedback"]["reviewed_at"]
+    assert "reviewer_id" not in document["review_feedback"]
+
+    # ...and resubmitting clears it (fresh review), leaving the version row untouched.
+    await _submit(client, uploader, document_id)
+    document = await _get_document(client, uploader, document_id)
+    assert document["status"] == "SUBMITTED"
+    assert document["review_feedback"] is None
+
+
+async def test_corrected_file_upload_allowed_after_changes_requested(client, db):
+    """A2: once changes are requested (document loops to DRAFT with
+    review_feedback set), the amend_of upload path accepts a corrected file
+    without the document ever having been AMENDMENT_REQUESTED."""
+    from app.modules.users.models import Role
+
+    fence_id = await _create_fence(db)
+    uploader = await _create_user_and_login(
+        client, db, email="uploader-a2@example.com", role=Role.AUTHORIZED_STAFF, fence_id=fence_id
+    )
+    reviewer = await _create_user_and_login(
+        client, db, email="reviewer-a2@example.com", role=Role.REVIEWING_OFFICER, fence_id=fence_id
+    )
+
+    upload = await _upload(client, uploader)
+    document_id = upload["document_id"]
+    await _submit(client, uploader, document_id)
+    resp = await client.post(
+        f"/api/v1/documents/{document_id}/review",
+        headers=_auth(reviewer),
+        json={"decision": "changes_requested", "comment": "fix clause 4"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    upload_v2 = await _upload(client, uploader, data=PDF_BYTES_V2, amend_of=document_id)
+    assert upload_v2["status"] == "DRAFT"
+
+    versions = await _get_versions(client, uploader, document_id)
+    assert len(versions) == 2
+    # V1 is retained, untouched (Guardrail #7) — create_next_version never
+    # rewrites it, only inserts V2.
+    v1 = next(v for v in versions if v["version_no"] == 1)
+    assert v1["sha256"] == hashlib.sha256(PDF_BYTES).hexdigest()
+    v2 = next(v for v in versions if v["version_no"] == 2)
+    assert v2["sha256"] == hashlib.sha256(PDF_BYTES_V2).hexdigest()
+    assert v2["status"] == "DRAFT"
+
+
+async def test_corrected_file_upload_rejected_for_fresh_draft(client, db):
+    """A brand-new DRAFT (never submitted, no review_feedback) still can't
+    take the amend_of path — only a changes-requested DRAFT can."""
+    from app.modules.users.models import Role
+
+    fence_id = await _create_fence(db)
+    uploader = await _create_user_and_login(
+        client, db, email="uploader-fresh@example.com", role=Role.AUTHORIZED_STAFF, fence_id=fence_id
+    )
+
+    upload = await _upload(client, uploader)
+    document_id = upload["document_id"]
+    assert upload["status"] == "DRAFT"
+
+    resp = await client.post(
+        "/api/v1/documents",
+        headers={**_auth(uploader), **_geo()},
+        data={
+            "title": "Vendor NDA",
+            "doc_type": "CONTRACT",
+            "classification": "RESTRICTED",
+            "tags": "",
+            "amend_of": document_id,
+        },
+        files={"file": ("contract.pdf", PDF_BYTES_V2, "application/pdf")},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "ILLEGAL_TRANSITION"
+
+
+async def test_submit_authorizes_by_current_version_uploader_not_original_owner(client, db):
+    """D-016: once a different DOCUMENT_AMEND-holding user uploads the
+    corrected file, that uploader (not the document's original owner) is the
+    one who may submit it."""
+    from app.modules.users.models import Role
+
+    fence_id = await _create_fence(db)
+    owner = await _create_user_and_login(
+        client, db, email="owner-d016@example.com", role=Role.AUTHORIZED_STAFF, fence_id=fence_id
+    )
+    other_staff = await _create_user_and_login(
+        client, db, email="other-d016@example.com", role=Role.AUTHORIZED_STAFF, fence_id=fence_id
+    )
+    reviewer = await _create_user_and_login(
+        client, db, email="reviewer-d016@example.com", role=Role.REVIEWING_OFFICER, fence_id=fence_id
+    )
+
+    upload = await _upload(client, owner)
+    document_id = upload["document_id"]
+    await _submit(client, owner, document_id)
+    resp = await client.post(
+        f"/api/v1/documents/{document_id}/review",
+        headers=_auth(reviewer),
+        json={"decision": "changes_requested", "comment": "fix clause 4"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    await _upload(client, other_staff, data=PDF_BYTES_V2, amend_of=document_id)
+
+    # The original owner is no longer the current version's uploader.
+    resp = await client.post(f"/api/v1/documents/{document_id}/submit", headers=_auth(owner))
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "ILLEGAL_TRANSITION"
+
+    resp = await client.post(f"/api/v1/documents/{document_id}/submit", headers=_auth(other_staff))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "SUBMITTED"
+
 
 async def test_illegal_transition_rejected(client, db):
     from app.modules.users.models import Role

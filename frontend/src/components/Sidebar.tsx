@@ -16,7 +16,9 @@ import { hasPermission, PERMISSIONS, type Permission } from "../lib/permissions"
 interface NavItem {
   to: string;
   label: string;
+  /** Any-of when more than one permission would unlock this link. */
   permission?: Permission;
+  permissions?: Permission[];
   icon: LucideIcon;
   group: "Workspace" | "Manage";
 }
@@ -42,7 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: "/admin",
     label: "Admin Panel",
-    permission: PERMISSIONS.USERS_MANAGE,
+    permissions: [PERMISSIONS.USERS_MANAGE, PERMISSIONS.GEOFENCE_MANAGE, PERMISSIONS.AUDIT_VIEW],
     icon: ShieldCheck,
     group: "Manage",
   },
@@ -61,9 +63,10 @@ const GROUPS: NavItem["group"][] = ["Workspace", "Manage"];
 export default function Sidebar() {
   const { user } = useAuth();
   const { pathname } = useLocation();
-  const visible = NAV_ITEMS.filter(
-    (item) => !item.permission || hasPermission(user?.role, item.permission),
-  );
+  const visible = NAV_ITEMS.filter((item) => {
+    const required = item.permissions ?? (item.permission ? [item.permission] : []);
+    return required.length === 0 || required.some((p) => hasPermission(user?.role, p));
+  });
 
   return (
     <nav className="relative flex h-full w-64 shrink-0 flex-col border-r border-white/10 bg-surface">

@@ -83,7 +83,9 @@ describe("Layout header + sidebar", () => {
     renderLayout();
 
     expect(screen.getByRole("link", { name: /audit logs/i })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /admin panel/i })).not.toBeInTheDocument();
+    // Auditor holds AUDIT_VIEW, which unlocks the Admin Panel's Reports tab
+    // (item 6) — the link itself is any-of across the admin-tab permissions.
+    expect(screen.getByRole("link", { name: /admin panel/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^upload$/i })).not.toBeInTheDocument();
     mockRole = "ADMINISTRATOR";
   });

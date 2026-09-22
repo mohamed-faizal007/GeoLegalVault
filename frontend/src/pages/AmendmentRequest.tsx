@@ -47,7 +47,12 @@ export default function AmendmentRequest() {
   if (docQuery.error) return <ErrorBanner error={docQuery.error} />;
   if (!docQuery.data) return null;
 
-  const readyForNewVersion = docQuery.data.status === "AMENDMENT_REQUESTED";
+  // Either an approved amendment off an ACTIVE document, or a document that
+  // looped back to DRAFT after a review requested changes (A2, D-015) — a
+  // fresh, never-submitted DRAFT (no review_feedback) doesn't qualify.
+  const readyForNewVersion =
+    docQuery.data.status === "AMENDMENT_REQUESTED" ||
+    (docQuery.data.status === "DRAFT" && docQuery.data.review_feedback != null);
 
   function handleRequestSubmit(e: FormEvent, coords: GeoCoords) {
     e.preventDefault();
@@ -100,8 +105,9 @@ export default function AmendmentRequest() {
               className="card space-y-4 p-6"
             >
               <p className="text-sm text-muted">
-                Amendment approved for a new version — upload the corrected file below to create
-                the next version.
+                {docQuery.data.status === "AMENDMENT_REQUESTED"
+                  ? "Amendment approved for a new version — upload the corrected file below to create the next version."
+                  : "Changes were requested — upload the corrected file below, then submit it for review again."}
               </p>
               <div>
                 <label className="field-label">

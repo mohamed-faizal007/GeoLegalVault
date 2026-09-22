@@ -67,9 +67,28 @@ async def update_geofence(
     geofence_id: str,
     payload: GeofenceUpdate,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_geofence_manage)],
+    actor: Annotated[dict, Depends(_require_geofence_manage)],
 ) -> GeofenceOut:
     try:
-        return await service.update_geofence(db, geofence_id, payload)
+        updated = await service.update_geofence(db, geofence_id, payload)
     except service.GeofenceNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Geofence not found") from exc
+
+    applied = payload.model_dump(exclude_unset=True)
+    if applied:
+        # Field names always; the name value too (small, not PII). Never the
+        # raw region/center coordinates — bulky and not useful in a listing.
+        meta: dict = {"fields": sorted(applied)}
+        if "name" in applied:
+            meta["name"] = applied["name"]
+        if "active" in applied:
+            meta["active"] = applied["active"]
+        await audit.record(
+            actor_id=actor["_id"],
+            action="GEOFENCE_UPDATE",
+            target_type="geofence",
+            target_id=geofence_id,
+            result="SUCCESS",
+            meta=meta,
+        )
+    return updated

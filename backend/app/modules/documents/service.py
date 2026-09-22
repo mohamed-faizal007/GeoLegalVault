@@ -18,7 +18,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.modules.documents.models import DOCUMENTS_COLLECTION, DocumentStatus
-from app.modules.documents.schemas import DocumentOut
+from app.modules.documents.schemas import DocumentOut, ReviewFeedbackOut
 from app.modules.versions import service as versions_service
 from app.services import storage
 from app.services.hashing import sha256_bytes
@@ -105,6 +105,14 @@ def to_out(doc: dict[str, Any]) -> DocumentOut:
         updated_at=doc["updated_at"],
         retention_until=doc.get("retention_until"),
         integrity_flag=doc.get("integrity_flag"),
+        review_feedback=(
+            ReviewFeedbackOut(
+                comment=doc["review_feedback"]["comment"],
+                reviewed_at=doc["review_feedback"]["at"],
+            )
+            if doc.get("review_feedback")
+            else None
+        ),
     )
 
 
@@ -235,6 +243,27 @@ async def update_status(
     await db[DOCUMENTS_COLLECTION].update_one(
         {"_id": document_id},
         {"$set": {"status": status.value, "updated_at": datetime.now(UTC)}},
+    )
+
+
+async def set_review_feedback(
+    db: AsyncIOMotorDatabase,
+    document_id: ObjectId,
+    *,
+    comment: str | None,
+    reviewer_id: ObjectId | None = None,
+) -> None:
+    """Stores (or, with comment=None, clears) the reviewer's "changes requested"
+    comment on the document row. Never touches document_versions (Guardrail #7)
+    and is never anchored (Guardrail #1)."""
+    feedback = (
+        {"comment": comment, "reviewer_id": reviewer_id, "at": datetime.now(UTC)}
+        if comment
+        else None
+    )
+    await db[DOCUMENTS_COLLECTION].update_one(
+        {"_id": document_id},
+        {"$set": {"review_feedback": feedback, "updated_at": datetime.now(UTC)}},
     )
 
 

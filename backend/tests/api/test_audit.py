@@ -210,3 +210,29 @@ async def test_verify_fail_appears_in_audit(client, db, local_chain):  # noqa: F
     assert body["total"] == 1
     assert body["items"][0]["target_id"] == version_id
     assert body["items"][0]["result"] == "MISMATCH"
+
+
+async def test_audit_filters_by_actor_and_date_range(client, db):
+    from datetime import UTC, datetime, timedelta
+
+    token = await _login(client, db, "admin-filter-audit@example.com", Role.ADMINISTRATOR)
+    admin = await db["users"].find_one({"email": "admin-filter-audit@example.com"})
+    admin_id = str(admin["_id"])
+
+    async def audit(**params):
+        resp = await client.get("/api/v1/audit", headers=_auth(token), params=params)
+        assert resp.status_code == 200, resp.text
+        return resp.json()
+
+    by_actor = await audit(actor_id=admin_id)
+    assert by_actor["total"] >= 1
+    assert all(item["actor_id"] == admin_id for item in by_actor["items"])
+    assert (await audit(actor_id="000000000000000000000000"))["total"] == 0
+
+    now = datetime.now(UTC)
+    day_ago = (now - timedelta(days=1)).isoformat()
+    day_ahead = (now + timedelta(days=1)).isoformat()
+    assert (await audit(actor_id=admin_id, date_from=day_ago, date_to=day_ahead))["total"] >= 1
+    # Entirely in the past / entirely in the future -> nothing.
+    assert (await audit(actor_id=admin_id, date_to=day_ago))["total"] == 0
+    assert (await audit(actor_id=admin_id, date_from=day_ahead))["total"] == 0

@@ -73,15 +73,23 @@ async def _current_version(db: AsyncIOMotorDatabase, document: dict[str, Any]) -
 async def submit(
     db: AsyncIOMotorDatabase, *, document: dict[str, Any], actor: dict[str, Any]
 ) -> dict[str, Any]:
-    """DRAFT -> SUBMITTED (owner only)."""
-    _require_status(document, DocumentStatus.DRAFT)
-    if str(document["owner_id"]) != str(actor["_id"]):
-        raise IllegalTransition("only the document's owner may submit it")
+    """DRAFT -> SUBMITTED (current-version uploader only).
 
+    Deliberately checks the *version's* uploader, not `document.owner_id`:
+    an amendment or a changes-requested correction can be uploaded by
+    someone other than the document's original owner (any DOCUMENT_AMEND
+    role), and that's the person who should submit what they just
+    uploaded (see DECISIONS.md D-016)."""
+    _require_status(document, DocumentStatus.DRAFT)
     version = await _current_version(db, document)
+    if str(version["uploaded_by"]) != str(actor["_id"]):
+        raise IllegalTransition("only the current version's uploader may submit it")
+
     document_id = document["_id"]
     await documents_service.update_status(db, document_id, DocumentStatus.SUBMITTED)
     await versions_service.update_status(db, version["_id"], VersionStatus.SUBMITTED)
+    # A resubmission starts a fresh review; the previous comment no longer applies.
+    await documents_service.set_review_feedback(db, document_id, comment=None)
     await audit.record(
         actor_id=actor["_id"],
         action="SUBMIT",
@@ -143,6 +151,9 @@ async def review(
             target_id=document_id,
             result="SUCCESS",
             meta={"comment": comment},
+        )
+        await documents_service.set_review_feedback(
+            db, document_id, comment=comment, reviewer_id=actor["_id"]
         )
         # Plan Part 5: "->CHANGES_REQUESTED->DRAFT" — loops straight back.
         await documents_service.update_status(db, document_id, DocumentStatus.DRAFT)

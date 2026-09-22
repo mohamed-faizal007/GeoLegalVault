@@ -72,7 +72,13 @@ export default function App() {
         <Route
           path="/admin"
           element={
-            <ProtectedRoute permission={PERMISSIONS.USERS_MANAGE}>
+            <ProtectedRoute
+              permissions={[
+                PERMISSIONS.USERS_MANAGE,
+                PERMISSIONS.GEOFENCE_MANAGE,
+                PERMISSIONS.AUDIT_VIEW,
+              ]}
+            >
               <AdminPanel />
             </ProtectedRoute>
           }

@@ -7,17 +7,20 @@ import Spinner from "./Spinner";
 
 /**
  * Route guard: redirects to /login when not authenticated, and — if a
- * `permission` is given — to /forbidden when the role doesn't have it. This
- * mirrors the server's RBAC matrix for navigation UX only; the server's own
- * deny-by-default check on each request is the real boundary regardless of
- * what this component decides.
+ * `permission` (or, for an any-of check, `permissions`) is given — to
+ * /forbidden when the role has none of them. This mirrors the server's RBAC
+ * matrix for navigation UX only; the server's own deny-by-default check on
+ * each request is the real boundary regardless of what this component
+ * decides.
  */
 export default function ProtectedRoute({
   children,
   permission,
+  permissions,
 }: {
   children: ReactNode;
   permission?: Permission;
+  permissions?: Permission[];
 }) {
   const { user, isLoading } = useAuth();
 
@@ -33,7 +36,8 @@ export default function ProtectedRoute({
     return <Navigate to="/login" replace />;
   }
 
-  if (permission && !hasPermission(user.role, permission)) {
+  const required = permissions ?? (permission ? [permission] : []);
+  if (required.length > 0 && !required.some((p) => hasPermission(user.role, p))) {
     return <Navigate to="/forbidden" replace />;
   }
 

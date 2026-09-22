@@ -34,6 +34,7 @@ export interface GeofenceCreate {
 
 export interface GeofenceUpdate {
   name?: string;
+  region?: GeoJSONPolygon;
   active?: boolean;
 }
 

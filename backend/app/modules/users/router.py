@@ -54,9 +54,25 @@ async def update_user(
     user_id: str,
     payload: UserUpdate,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_users_manage)],
+    actor: Annotated[dict, Depends(_require_users_manage)],
 ) -> UserOut:
     try:
-        return await service.update_user(db, user_id, payload)
+        updated, applied = await service.update_user(db, user_id, payload, actor_id=actor["_id"])
     except service.UserNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="User not found") from exc
+
+    if applied:
+        # Field names always; values only for the RBAC/geofence inputs — never name/PII.
+        meta: dict = {"fields": sorted(applied)}
+        for key in ("role", "is_active", "assigned_geofence_ids"):
+            if key in applied:
+                meta[key] = applied[key]
+        await audit.record(
+            actor_id=actor["_id"],
+            action="USER_UPDATE",
+            target_type="user",
+            target_id=user_id,
+            result="SUCCESS",
+            meta=meta,
+        )
+    return updated

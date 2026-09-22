@@ -130,12 +130,13 @@ async def test_alg_none_token_rejected_at_api_level(client, db):
 
 async def test_non_owner_cannot_submit_another_users_draft(client, db):
     """Object-level authorization: guessing/knowing another user's document
-    id must not let a different user act on it as though they owned it.
-    This app models "owner-only" as part of the lifecycle state machine
-    (workflow.submit) rather than a generic RBAC permission, so the blocked
-    attempt surfaces as 409 ILLEGAL_TRANSITION rather than a bare 403 — the
-    object reference is still rejected, just with this app's own error
-    taxonomy for "not a legal actor for this transition"."""
+    id must not let a different user act on it as though it were theirs.
+    This app models "current-version-uploader-only" (D-016) as part of the
+    lifecycle state machine (workflow.submit) rather than a generic RBAC
+    permission, so the blocked attempt surfaces as 409 ILLEGAL_TRANSITION
+    rather than a bare 403 — the object reference is still rejected, just
+    with this app's own error taxonomy for "not a legal actor for this
+    transition"."""
     fence_id = await _create_fence(db)
     owner_token = await _create_user_and_login(
         client, db, email="owner@example.com", role=Role.AUTHORIZED_STAFF, fence_id=fence_id

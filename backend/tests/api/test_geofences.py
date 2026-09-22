@@ -62,6 +62,60 @@ async def test_admin_can_create_list_get_and_deactivate_geofence(client, db):
     assert still_there.status_code == 200
 
 
+async def test_update_geofence_name_and_region_records_audit(client, db):
+    token = await _login(client, db, "admin-update@example.com", Role.ADMINISTRATOR)
+
+    create_resp = await client.post(
+        "/api/v1/geofences",
+        headers=_auth(token),
+        json={"name": "HQ Campus", "region": {"type": "Polygon", "coordinates": [HQ_RING]}},
+    )
+    geofence_id = create_resp.json()["id"]
+
+    new_ring = [
+        [78.20, 11.70],
+        [78.22, 11.70],
+        [78.22, 11.72],
+        [78.20, 11.72],
+        [78.20, 11.70],
+    ]
+    update_resp = await client.patch(
+        f"/api/v1/geofences/{geofence_id}",
+        headers=_auth(token),
+        json={"name": "HQ Campus (relocated)", "region": {"type": "Polygon", "coordinates": [new_ring]}},
+    )
+    assert update_resp.status_code == 200
+    body = update_resp.json()
+    assert body["name"] == "HQ Campus (relocated)"
+    assert body["region"]["coordinates"] == [new_ring]
+
+    entry = await db["audit_logs"].find_one({"action": "GEOFENCE_UPDATE"})
+    assert entry is not None
+    assert sorted(entry["meta"]["fields"]) == ["name", "region"]
+    assert entry["meta"]["name"] == "HQ Campus (relocated)"
+    # Raw polygon coordinates never land in the audit trail.
+    assert "coordinates" not in str(entry["meta"])
+
+
+async def test_no_op_update_does_not_record_audit(client, db):
+    token = await _login(client, db, "admin-noop@example.com", Role.ADMINISTRATOR)
+
+    create_resp = await client.post(
+        "/api/v1/geofences",
+        headers=_auth(token),
+        json={"name": "NoOp", "region": {"type": "Polygon", "coordinates": [HQ_RING]}},
+    )
+    geofence_id = create_resp.json()["id"]
+
+    update_resp = await client.patch(
+        f"/api/v1/geofences/{geofence_id}", headers=_auth(token), json={}
+    )
+    assert update_resp.status_code == 200
+
+    entry = await db["audit_logs"].find_one({"action": "GEOFENCE_UPDATE"})
+    assert entry is None
+
+
 async def test_non_admin_cannot_manage_geofences(client, db):
     token = await _login(client, db, "staff@example.com", Role.AUTHORIZED_STAFF)
 

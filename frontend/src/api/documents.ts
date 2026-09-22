@@ -1,5 +1,10 @@
 import { geoHeaders, http, type GeoCoords } from "./http";
 
+export interface ReviewFeedback {
+  comment: string;
+  reviewed_at: string;
+}
+
 export interface DocumentOut {
   id: string;
   title: string;
@@ -13,6 +18,7 @@ export interface DocumentOut {
   updated_at: string;
   retention_until: string | null;
   integrity_flag: string | null;
+  review_feedback?: ReviewFeedback | null;
 }
 
 export interface DocumentListOut {

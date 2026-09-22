@@ -6,6 +6,14 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class ReviewFeedbackOut(BaseModel):
+    """Latest "changes requested" comment, shown to the submitter. Cleared on
+    resubmission. A convenience copy — the audit log remains the record."""
+
+    comment: str
+    reviewed_at: datetime
+
+
 class DocumentOut(BaseModel):
     id: str
     title: str
@@ -19,6 +27,7 @@ class DocumentOut(BaseModel):
     updated_at: datetime
     retention_until: datetime | None = None
     integrity_flag: str | None = None
+    review_feedback: ReviewFeedbackOut | None = None
 
 
 class DocumentListOut(BaseModel):

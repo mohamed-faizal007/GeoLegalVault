@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { Fragment, useState, type FormEvent } from "react";
 
-import { createGeofence, listGeofences, updateGeofence } from "../../api/geofences";
+import { createGeofence, listGeofences, updateGeofence, type GeofenceOut } from "../../api/geofences";
 import ErrorBanner from "../ErrorBanner";
 import Spinner from "../Spinner";
 
@@ -43,12 +43,83 @@ function parseRing(raw: string): number[][] {
   return ring;
 }
 
+/** Inverse of parseRing's shape, for pre-filling the edit form from a
+ * fence's current region. */
+function formatRing(ring: number[][]): string {
+  return `[\n${ring.map((p) => `  [${p[0]}, ${p[1]}]`).join(",\n")}\n]`;
+}
+
+/** Inline editor for name / region (PATCH /geofences/{id}), mirroring
+ * UserEditForm's inline-in-table pattern for users. */
+function GeofenceEditForm({
+  fence,
+  onDone,
+}: {
+  fence: GeofenceOut;
+  onDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(fence.name);
+  const [ringText, setRingText] = useState(formatRing(fence.region.coordinates[0] ?? []));
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const ring = parseRing(ringText);
+      return updateGeofence(fence.id, { name, region: { type: "Polygon", coordinates: [ring] } });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "geofences"] });
+      onDone();
+    },
+  });
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    mutation.mutate();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3 bg-raised/40 p-4">
+      <input
+        required
+        aria-label="Geofence name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="input"
+      />
+      <div>
+        <p className="mb-1 text-xs font-medium text-muted">
+          Polygon ring — an array of [longitude, latitude] pairs (GeoJSON order; closes
+          automatically if you omit the repeated first point)
+        </p>
+        <textarea
+          aria-label="Polygon ring"
+          value={ringText}
+          onChange={(e) => setRingText(e.target.value)}
+          rows={6}
+          className="input font-mono text-xs"
+        />
+      </div>
+      {mutation.error && <ErrorBanner error={mutation.error} />}
+      <div className="flex gap-2">
+        <button type="submit" disabled={mutation.isPending} className="btn-primary btn-sm">
+          {mutation.isPending ? "Saving…" : "Save changes"}
+        </button>
+        <button type="button" onClick={onDone} className="btn-secondary btn-sm">
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export default function GeofenceManagementPanel() {
   const queryClient = useQueryClient();
   const geofencesQuery = useQuery({
     queryKey: ["admin", "geofences"],
     queryFn: () => listGeofences(1, 100),
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [ringText, setRingText] = useState(EXAMPLE_RING);
@@ -124,28 +195,46 @@ export default function GeofenceManagementPanel() {
             </thead>
             <tbody className="divide-y divide-white/10">
               {geofencesQuery.data.items.map((fence) => (
-                <tr key={fence.id} className="table-row-hover">
-                  <td className="px-4 py-2.5">{fence.name}</td>
-                  <td className="px-4 py-2.5 text-muted">
-                    {fence.region.coordinates[0]?.length ?? 0}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {fence.active ? (
-                      <span className="text-emerald-300">Active</span>
-                    ) : (
-                      <span className="text-faint">Deactivated</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <button
-                      type="button"
-                      onClick={() => toggleActiveMutation.mutate({ id: fence.id, active: fence.active })}
-                      className="text-xs font-medium text-brand-400 underline hover:text-brand-300"
-                    >
-                      {fence.active ? "Deactivate" : "Reactivate"}
-                    </button>
-                  </td>
-                </tr>
+                <Fragment key={fence.id}>
+                  <tr className="table-row-hover">
+                    <td className="px-4 py-2.5">{fence.name}</td>
+                    <td className="px-4 py-2.5 text-muted">
+                      {fence.region.coordinates[0]?.length ?? 0}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {fence.active ? (
+                        <span className="text-emerald-300">Active</span>
+                      ) : (
+                        <span className="text-faint">Deactivated</span>
+                      )}
+                    </td>
+                    <td className="space-x-3 px-4 py-2.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(editingId === fence.id ? null : fence.id)}
+                        className="text-xs font-medium text-brand-400 underline hover:text-brand-300"
+                      >
+                        {editingId === fence.id ? "Close" : "Edit"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          toggleActiveMutation.mutate({ id: fence.id, active: fence.active })
+                        }
+                        className="text-xs font-medium text-brand-400 underline hover:text-brand-300"
+                      >
+                        {fence.active ? "Deactivate" : "Reactivate"}
+                      </button>
+                    </td>
+                  </tr>
+                  {editingId === fence.id && (
+                    <tr>
+                      <td colSpan={4} className="p-0">
+                        <GeofenceEditForm fence={fence} onDone={() => setEditingId(null)} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
