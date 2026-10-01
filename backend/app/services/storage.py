@@ -57,10 +57,16 @@ def get_presign_client() -> BaseClient:
     return _presign_client
 
 
-def build_version_key(document_id: str, version_no: int) -> str:
-    """Server-generated storage key — never the client's filename, which
-    would allow path traversal or key collisions."""
-    return f"docs/{document_id}/v{version_no}"
+def build_version_key(document_id: str, version_no: int, sha256: str) -> str:
+    """Server-generated, content-addressed storage key — never the client's
+    filename, which would allow path traversal or key collisions.
+
+    The SHA-256 is part of the key (D-022/D-024), so two uploads can only
+    share a key if they carry identical bytes: a later upload can never
+    overwrite a stored object with different content, whatever the
+    concurrency, which is what keeps the recorded hash and the stored bytes
+    in step (Guardrail #7)."""
+    return f"docs/{document_id}/v{version_no}-{sha256}"
 
 
 def put_object(data: bytes, key: str, content_type: str) -> None:
@@ -71,6 +77,13 @@ def put_object(data: bytes, key: str, content_type: str) -> None:
         Body=data,
         ContentType=content_type,
     )
+
+
+def delete_object(key: str) -> None:
+    """Used only to discard an orphan the upload path itself just wrote
+    (a lost version-number race or a failed insert) — never for an object a
+    version row points at."""
+    get_client().delete_object(Bucket=get_settings().STORAGE_BUCKET, Key=key)
 
 
 def get_object(key: str) -> bytes:

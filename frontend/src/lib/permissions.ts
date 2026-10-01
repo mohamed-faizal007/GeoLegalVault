@@ -20,6 +20,7 @@ export const PERMISSIONS = {
   USERS_MANAGE: "users:manage",
   GEOFENCE_MANAGE: "geofence:manage",
   AUDIT_VIEW: "audit:view",
+  INTEGRITY_CLEAR: "integrity:clear",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -43,6 +44,7 @@ const ROLE_PERMISSIONS: Record<Role, Set<Permission>> = {
     PERMISSIONS.GEOFENCE_MANAGE,
     PERMISSIONS.AUDIT_VIEW,
     PERMISSIONS.DOCUMENT_ARCHIVE,
+    PERMISSIONS.INTEGRITY_CLEAR,
   ]),
   LEGAL_OFFICER: new Set([
     PERMISSIONS.DOCUMENT_UPLOAD,

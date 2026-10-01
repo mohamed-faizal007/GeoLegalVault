@@ -6,6 +6,7 @@ duplicated here.
 """
 
 import base64
+import hashlib
 import json
 import time
 from datetime import UTC, datetime, timedelta
@@ -226,7 +227,7 @@ async def test_operator_shaped_query_params_are_treated_as_literal_strings(clien
 
 
 async def test_malicious_filename_never_reaches_the_storage_key(client, db):
-    """The storage key is always server-generated (docs/{document_id}/v{n})
+    """The storage key is always server-generated (docs/{document_id}/v{n}-{sha256})
     — the client's filename is never read for that purpose anywhere in the
     upload path, so a path-traversal-shaped filename can't escape the
     document's own storage prefix."""
@@ -253,6 +254,6 @@ async def test_malicious_filename_never_reaches_the_storage_key(client, db):
         f"/api/v1/documents/{document_id}/versions", headers=_auth(token)
     )
     storage_key = versions.json()["items"][0]["storage_key"]
-    assert storage_key == f"docs/{document_id}/v1"
+    assert storage_key == f"docs/{document_id}/v1-{hashlib.sha256(PDF_BYTES).hexdigest()}"
     assert ".." not in storage_key
     assert "etc/passwd" not in storage_key

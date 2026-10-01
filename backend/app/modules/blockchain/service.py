@@ -10,12 +10,14 @@ out of `anchor_document_version` — it's recorded as a FAILED row so the
 caller can keep the document usable and retry later.
 """
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo.errors import DuplicateKeyError
 
 from app.core.config import get_settings
 from app.modules.blockchain.models import (
@@ -25,6 +27,9 @@ from app.modules.blockchain.models import (
     AnchorStatus,
 )
 from app.services import blockchain as chain
+from app.services.anchor_errors import classify_anchor_error, redact_secrets
+
+_logger = logging.getLogger(__name__)
 
 
 def etherscan_url(tx_hash: str) -> str:
@@ -51,11 +56,23 @@ async def create_pending_anchor(
         "contract_address": settings.CONTRACT_ADDRESS,
         "network": NETWORK,
         "status": AnchorStatus.PENDING.value,
+        # `live` marks a PENDING/CONFIRMED row; a partial unique index on
+        # (version_id, live=True) means a version can never have two (D-023).
+        "live": True,
         "error": None,
         "created_at": datetime.now(UTC),
         "confirmed_at": None,
     }
-    result = await db[BLOCKCHAIN_ANCHORS_COLLECTION].insert_one(doc)
+    try:
+        result = await db[BLOCKCHAIN_ANCHORS_COLLECTION].insert_one(doc)
+    except DuplicateKeyError:
+        existing = await db[BLOCKCHAIN_ANCHORS_COLLECTION].find_one(
+            {"version_id": version_id, "live": True}
+        )
+        _logger.warning("anchor: a live anchor row already exists for version %s", version_id)
+        if existing is not None:
+            return existing
+        raise
     doc["_id"] = result.inserted_id
     return doc
 
@@ -109,13 +126,23 @@ async def anchor_document_version(
     try:
         tx_hash = await chain.anchor_hash(str(document_id), version_no, sha256, event_type)
     except Exception as exc:
+        code = classify_anchor_error(exc)
+        # Full detail stays server-side only, with the RPC URL's secret parts
+        # masked (D-020). The stored/returned error is just the fixed code.
+        _logger.error(
+            "anchor: send failed (%s) for document %s v%s: %s",
+            code,
+            document_id,
+            version_no,
+            redact_secrets(f"{type(exc).__name__}: {exc}"),
+        )
         return await _create_failed_anchor(
             db,
             document_id=document_id,
             version_id=version_id,
             sha256=sha256,
             event_type=event_type,
-            error=str(exc),
+            error=code,
         )
 
     return await create_pending_anchor(
@@ -128,9 +155,13 @@ async def anchor_document_version(
     )
 
 
-async def mark_confirmed(db: AsyncIOMotorDatabase, anchor_id: ObjectId, block_number: int) -> None:
-    await db[BLOCKCHAIN_ANCHORS_COLLECTION].update_one(
-        {"_id": anchor_id},
+async def mark_confirmed(
+    db: AsyncIOMotorDatabase, anchor_id: ObjectId, block_number: int
+) -> bool:
+    """Claims PENDING -> CONFIRMED. True only for the one caller that made the
+    change, so promotion happens once even if a worker and an approve() race."""
+    result = await db[BLOCKCHAIN_ANCHORS_COLLECTION].update_one(
+        {"_id": anchor_id, "status": AnchorStatus.PENDING.value},
         {
             "$set": {
                 "status": AnchorStatus.CONFIRMED.value,
@@ -139,11 +170,13 @@ async def mark_confirmed(db: AsyncIOMotorDatabase, anchor_id: ObjectId, block_nu
             }
         },
     )
+    return result.modified_count == 1
 
 
 async def mark_failed(db: AsyncIOMotorDatabase, anchor_id: ObjectId, error: str) -> None:
     await db[BLOCKCHAIN_ANCHORS_COLLECTION].update_one(
-        {"_id": anchor_id}, {"$set": {"status": AnchorStatus.FAILED.value, "error": error}}
+        {"_id": anchor_id},
+        {"$set": {"status": AnchorStatus.FAILED.value, "error": error, "live": False}},
     )
 
 

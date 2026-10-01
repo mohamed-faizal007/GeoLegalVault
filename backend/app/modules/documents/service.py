@@ -7,6 +7,7 @@ insert somehow fails after the document insert succeeded, the document row
 is rolled back — no orphan `documents` metadata either way.
 """
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -14,6 +15,8 @@ import magic
 from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -67,8 +70,28 @@ class StorageUnavailable(AppError):
         super().__init__("STORAGE_UNAVAILABLE", message)
 
 
+class VersionConflict(AppError):
+    status_code = 409
+
+    def __init__(self, message: str):
+        super().__init__("VERSION_CONFLICT", message)
+
+
 class DocumentNotFound(Exception):
     pass
+
+
+_logger = logging.getLogger(__name__)
+
+
+def _discard_object(key: str) -> None:
+    """Best-effort removal of an object this request itself just wrote and
+    that no version row references (D-024). Never raises: a leftover orphan
+    is harmless, a failure here must not mask the real error."""
+    try:
+        storage.delete_object(key)
+    except Exception:
+        _logger.warning("storage: could not discard orphan object %s", key)
 
 
 def validate_upload(data: bytes, claimed_content_type: str) -> None:
@@ -130,14 +153,14 @@ async def create_document_with_v1(
     validate_upload(data, content_type)
 
     document_id = ObjectId()
-    storage_key = storage.build_version_key(str(document_id), 1)
+    sha256 = sha256_bytes(data)
+    storage_key = storage.build_version_key(str(document_id), 1, sha256)
 
     try:
         storage.put_object(data, storage_key, content_type)
     except Exception as exc:
         raise StorageUnavailable("could not store the uploaded file") from exc
 
-    sha256 = sha256_bytes(data)
     now = datetime.now(UTC)
 
     document_doc = {
@@ -155,7 +178,11 @@ async def create_document_with_v1(
         "anchor_pending_alert": False,
         "integrity_flag": None,
     }
-    await db[DOCUMENTS_COLLECTION].insert_one(document_doc)
+    try:
+        await db[DOCUMENTS_COLLECTION].insert_one(document_doc)
+    except Exception:
+        _discard_object(storage_key)
+        raise
 
     try:
         version_doc = await versions_service.insert_version(
@@ -171,6 +198,7 @@ async def create_document_with_v1(
         )
     except Exception:
         await db[DOCUMENTS_COLLECTION].delete_one({"_id": document_id})
+        _discard_object(storage_key)
         raise
 
     document_doc["current_version_id"] = version_doc["_id"]
@@ -246,6 +274,53 @@ async def update_status(
     )
 
 
+async def claim_status(
+    db: AsyncIOMotorDatabase,
+    document_id: ObjectId,
+    *,
+    expected: DocumentStatus,
+    new: DocumentStatus,
+) -> dict[str, Any] | None:
+    """Atomic compare-and-swap on the status (D-022/D-023): moves the
+    document from `expected` to `new` only if it is still in `expected`, and
+    returns the updated row — or None if another request got there first.
+    This, not the read-time status check, is what serialises transitions."""
+    return await db[DOCUMENTS_COLLECTION].find_one_and_update(
+        {"_id": document_id, "status": expected.value},
+        {"$set": {"status": new.value, "updated_at": datetime.now(UTC)}},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+async def clear_integrity_flag(
+    db: AsyncIOMotorDatabase,
+    document_id: ObjectId,
+    *,
+    expected_updated_at: datetime,
+    cleared_by: ObjectId,
+    reason: str,
+) -> bool:
+    """Clears TAMPERED only if the document is still flagged and untouched
+    since `expected_updated_at` (D-025) — so a mismatch recorded or a
+    transition made while the caller was re-verifying is never overwritten."""
+    now = datetime.now(UTC)
+    result = await db[DOCUMENTS_COLLECTION].update_one(
+        {
+            "_id": document_id,
+            "integrity_flag": "TAMPERED",
+            "updated_at": expected_updated_at,
+        },
+        {
+            "$set": {
+                "integrity_flag": None,
+                "updated_at": now,
+                "integrity_cleared": {"by": cleared_by, "at": now, "reason": reason},
+            }
+        },
+    )
+    return result.modified_count == 1
+
+
 async def set_review_feedback(
     db: AsyncIOMotorDatabase,
     document_id: ObjectId,
@@ -292,8 +367,8 @@ async def set_integrity_flag(
     db: AsyncIOMotorDatabase, document_id: ObjectId, flag: str | None
 ) -> None:
     """Set by the verification loop (Phase 7) the moment a MISMATCH is
-    detected — never cleared automatically; only an operator investigating
-    the document clears it by hand."""
+    detected — never cleared automatically. Clearing goes through
+    `clear_integrity_flag` (admin-only, re-verifies first, audited — D-025)."""
     await db[DOCUMENTS_COLLECTION].update_one(
         {"_id": document_id},
         {"$set": {"integrity_flag": flag, "updated_at": datetime.now(UTC)}},
@@ -321,25 +396,47 @@ async def create_next_version(
 
     document_id = document["_id"]
     next_version_no = current_version["version_no"] + 1
-    storage_key = storage.build_version_key(str(document_id), next_version_no)
+    sha256 = sha256_bytes(data)
+    # Content-addressed (D-024): concurrent uploaders of *different* bytes get
+    # different keys, so neither can overwrite the other's object.
+    storage_key = storage.build_version_key(str(document_id), next_version_no, sha256)
 
     try:
         storage.put_object(data, storage_key, content_type)
     except Exception as exc:
         raise StorageUnavailable("could not store the uploaded file") from exc
 
-    sha256 = sha256_bytes(data)
-    version_doc = await versions_service.insert_version(
-        db,
-        document_id=document_id,
-        version_no=next_version_no,
-        sha256=sha256,
-        prev_version_hash=current_version["sha256"],
-        storage_key=storage_key,
-        size_bytes=len(data),
-        mime=content_type,
-        uploaded_by=actor_id,
-    )
+    try:
+        version_doc = await versions_service.insert_version(
+            db,
+            document_id=document_id,
+            version_no=next_version_no,
+            sha256=sha256,
+            prev_version_hash=current_version["sha256"],
+            storage_key=storage_key,
+            size_bytes=len(data),
+            mime=content_type,
+            uploaded_by=actor_id,
+        )
+    except DuplicateKeyError:
+        # Lost the race for this version number (the unique index decides).
+        winner = await versions_service.get_version_by_number(db, document_id, next_version_no)
+        if winner is not None and winner["sha256"] == sha256 and winner["uploaded_by"] == actor_id:
+            # Same uploader, same bytes: a retry / double-click. Idempotent —
+            # return the winner (the key is identical, so nothing to discard).
+            return {
+                "document": await get_document_by_id(db, str(document_id)),
+                "version": winner,
+                "replayed": True,
+            }
+        if winner is None or winner["storage_key"] != storage_key:
+            _discard_object(storage_key)
+        raise VersionConflict(
+            "another upload for this document was just accepted; reload and try again"
+        ) from None
+    except Exception:
+        _discard_object(storage_key)
+        raise
 
     await update_status(db, document_id, DocumentStatus.DRAFT)
     updated_document = await get_document_by_id(db, str(document_id))

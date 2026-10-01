@@ -97,33 +97,58 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
-def _wait_for_rpc(url: str, proc: subprocess.Popen, log_file, timeout: float = 90.0) -> None:
+_DEFAULT_START_TIMEOUT_SEC = 90.0
+_LOG_TAIL_CHARS = 2000
+
+
+def _start_timeout_sec() -> float:
+    """Readiness timeout for the Hardhat node, overridable for slow CI via
+    HARDHAT_START_TIMEOUT_SEC (D-021). The default stays 90s: an idle cold
+    start takes ~5s, so a long timeout only hides contention and delays the
+    report of a node that is genuinely hung."""
+    return float(os.environ.get("HARDHAT_START_TIMEOUT_SEC", _DEFAULT_START_TIMEOUT_SEC))
+
+
+def _log_tail(log_file) -> str:
+    log_file.flush()
+    log_file.seek(0)
+    return log_file.read()[-_LOG_TAIL_CHARS:]
+
+
+def _wait_for_rpc(
+    url: str, proc: subprocess.Popen, log_file, timeout: float | None = None
+) -> None:
     """Poll until the node answers eth_blockNumber, or fail fast the moment
     the process itself has already died (e.g. EADDRINUSE) instead of
     burning the full timeout waiting for a node that will never answer.
 
-    90s (not 30s) because a cold `npx hardhat node` start is genuinely slow
-    under load — a busy CI runner or a first-ever compile — and this was
-    the single biggest source of spurious failures in this suite.
+    One reused httpx.Client for every poll: a bare `httpx.post` builds a new
+    client (and SSL context) per call, which costs ~1s of CPU on a loaded
+    machine and made the poll itself a source of the slowness it waits on.
+    On failure the error carries the node's log tail and process state so a
+    timeout is diagnosable instead of opaque.
     """
+    timeout = _start_timeout_sec() if timeout is None else timeout
     deadline = time.time() + timeout
     payload = {"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 1}
-    while time.time() < deadline:
-        exit_code = proc.poll()
-        if exit_code is not None:
-            log_file.seek(0)
-            output = log_file.read()
-            raise RuntimeError(
-                f"hardhat node process exited early (code {exit_code}) before answering "
-                f"RPC at {url}. Output:\n{output}"
-            )
-        try:
-            if httpx.post(url, json=payload, timeout=1).status_code == 200:
-                return
-        except httpx.HTTPError:
-            pass
-        time.sleep(0.5)
-    raise RuntimeError(f"hardhat node at {url} did not become ready within {timeout}s")
+    with httpx.Client(timeout=1) as client:
+        while time.time() < deadline:
+            exit_code = proc.poll()
+            if exit_code is not None:
+                raise RuntimeError(
+                    f"hardhat node process exited early (code {exit_code}) before answering "
+                    f"RPC at {url}. Output tail:\n{_log_tail(log_file)}"
+                )
+            try:
+                if client.post(url, json=payload).status_code == 200:
+                    return
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.5)
+    raise RuntimeError(
+        f"hardhat node at {url} did not become ready within {timeout}s "
+        f"(process alive: {proc.poll() is None}). Output tail:\n{_log_tail(log_file)}"
+    )
 
 
 def _deploy_contract(rpc_url: str) -> tuple[str, int]:
@@ -165,25 +190,38 @@ def local_chain():
     if npx is None:
         pytest.skip("npx not on PATH — cannot start a local Hardhat node")
 
-    port = _free_port()
-    rpc_url = f"http://127.0.0.1:{port}"
     # Hardhat logs every RPC call to stdout, and this session-scoped node
     # serves every integration test file — a plain PIPE would fill its OS
     # buffer and deadlock the node the moment nothing drains it. A real
     # file never blocks the writer, and still gives us the log for
     # diagnostics if the process dies early.
-    log_file = tempfile.TemporaryFile(mode="w+")
-    proc = subprocess.Popen(
-        [npx, "hardhat", "node", "--hostname", "127.0.0.1", "--port", str(port)],
-        cwd=CONTRACTS_DIR,
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
-        **_popen_kwargs_for_new_process_group(),
-    )
+    # One retry on a fresh port (D-021): a lost port race or a single slow
+    # cold start should not fail the whole session, but two failures in a
+    # row are a real problem and surface with the log tail.
+    proc = log_file = None
+    for attempt in (1, 2):
+        port = _free_port()
+        rpc_url = f"http://127.0.0.1:{port}"
+        log_file = tempfile.TemporaryFile(mode="w+")
+        proc = subprocess.Popen(
+            [npx, "hardhat", "node", "--hostname", "127.0.0.1", "--port", str(port)],
+            cwd=CONTRACTS_DIR,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            **_popen_kwargs_for_new_process_group(),
+        )
+        try:
+            _wait_for_rpc(rpc_url, proc, log_file)
+            break
+        except RuntimeError:
+            _kill_process_tree(proc)
+            if attempt == 2:
+                log_file.close()
+                raise
+            log_file.close()
 
     original_env = {key: os.environ.get(key) for key in _ENV_KEYS}
     try:
-        _wait_for_rpc(rpc_url, proc, log_file)
         contract_address, chain_id = _deploy_contract(rpc_url)
 
         os.environ["SEPOLIA_RPC_URL"] = rpc_url
@@ -276,7 +314,7 @@ async def test_reanchor_same_document_version_fails_and_records_failed(db, local
     )
     assert second["status"] == AnchorStatus.FAILED.value
     assert second["tx_hash"] is None
-    assert "already anchored" in second["error"]
+    assert second["error"] == "ALREADY_ANCHORED"
 
 
 @_async_test

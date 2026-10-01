@@ -25,6 +25,7 @@ from app.core.rbac import (
     DOCUMENT_SUBMIT,
     DOCUMENT_UPLOAD,
     DOCUMENT_VIEW,
+    INTEGRITY_CLEAR,
     REVIEW_PERFORM,
     RBACError,
     has_permission,
@@ -35,6 +36,8 @@ from app.modules.documents import service, workflow
 from app.modules.documents.models import DocumentStatus
 from app.modules.documents.schemas import (
     AmendRequest,
+    ClearIntegrityRequest,
+    ClearIntegrityResponse,
     DocumentListOut,
     DocumentOut,
     DownloadResponse,
@@ -55,6 +58,7 @@ _require_review = require(REVIEW_PERFORM)
 _require_approve = require(APPROVE_PERFORM)
 _require_amend = require(DOCUMENT_AMEND)
 _require_archive = require(DOCUMENT_ARCHIVE)
+_require_integrity_clear = require(INTEGRITY_CLEAR)
 _require_upload_geofence = require_geofence("document_upload")
 _require_download_geofence = require_geofence("document_download")
 _require_approve_geofence = require_geofence("document_approve")
@@ -125,6 +129,16 @@ async def upload_document(
             )
     finally:
         await file.close()
+
+    if result.get("replayed"):
+        # Identical retry of an upload that was already accepted (D-024): same
+        # version returned, and no second UPLOAD audit row for the same event.
+        return UploadResponse(
+            document_id=str(result["document"]["_id"]),
+            version_id=str(result["version"]["_id"]),
+            sha256=result["version"]["sha256"],
+            status=result["document"]["status"],
+        )
 
     await audit.record(
         actor_id=user["_id"],
@@ -286,3 +300,19 @@ async def archive_document(
     document = await _get_document_or_404(db, document_id)
     updated = await workflow.archive(db, document=document, actor=user)
     return TransitionResponse(document_id=document_id, status=updated["status"])
+
+
+@router.post("/{document_id}/integrity/clear", response_model=ClearIntegrityResponse)
+async def clear_integrity_flag(
+    document_id: str,
+    payload: ClearIntegrityRequest,
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
+    user: Annotated[dict, Depends(_require_integrity_clear)],
+) -> ClearIntegrityResponse:
+    """Administrator-only. Re-runs 3-way verification on every anchored
+    version first and refuses (409) unless all pass — see D-025."""
+    document = await _get_document_or_404(db, document_id)
+    verified = await workflow.clear_integrity_flag(
+        db, document=document, actor=user, reason=payload.reason
+    )
+    return ClearIntegrityResponse(document_id=document_id, verified_versions=verified)

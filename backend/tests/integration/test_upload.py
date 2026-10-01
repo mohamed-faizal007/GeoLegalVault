@@ -104,7 +104,10 @@ async def test_valid_pdf_upload_returns_201_with_hash_and_draft_v1(client, db):
     assert len(versions) == 1
     assert versions[0]["version_no"] == 1
     assert versions[0]["prev_version_hash"] is None
-    assert versions[0]["storage_key"] == f"docs/{body['document_id']}/v1"
+    assert (
+        versions[0]["storage_key"]
+        == f"docs/{body['document_id']}/v1-{hashlib.sha256(PDF_BYTES).hexdigest()}"
+    )
 
 
 async def test_upload_outside_geofence_denied(client, db):

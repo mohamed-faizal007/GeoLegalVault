@@ -292,3 +292,187 @@ requires the signed-in user to be the current version's uploader, not `doc.owner
 — matching D-008's `isUploader` computation already used for the review/approve buttons.
 **Not doing:** removing the "Reason for amendment" form or its `ACTIVE`-only trigger — that path
 is unchanged; only the "ready for new version" condition gains the second case.
+
+---
+
+## 2026-10-01 — Hygiene batch from PRODUCTION_READINESS.md (OPS-05, SEC-08, SEC-07, test infra)
+
+Context: first batch of fixes after the production-readiness audit. Deliberately small and
+behaviour-preserving apart from (c); the larger items (REL-02/03, REL-01, REL-04, SEC-02, …)
+follow separately, each with its own entries.
+
+### D-018 — Fix the 3 ruff E501 errors by wrapping the lines (no rule changes)
+**Decision:** wrap the three over-long lines in `tests/api/test_geofences.py` and
+`tests/integration/test_workflow.py`. Keep `line-length = 100` and the selected rule set.
+**Why:** CI's "Ruff lint" step is a hard gate and was red at HEAD; DEPLOYMENT.md says a red CI run
+blocks deploys. Loosening the rule would hide the next violation instead of fixing this one.
+**Not doing:** adding `# noqa`, raising line length, or touching any non-test file.
+
+### D-019 — Upgrade PyJWT, python-multipart, pytest (+ pytest-asyncio) to patched versions
+**Decision:** `pyjwt` 2.10.1 → 2.15.1, `python-multipart` 0.0.20 → 0.0.32, `pytest` 8.3.4 →
+9.0.3 (dev), and `pytest-asyncio` 0.25.0 → 1.3.0 because 0.25.0 declares `pytest<9`.
+Exact `==` pins are kept (the repo's existing convention). Full backend suite run afterwards; any
+breakage is reported rather than papered over.
+**Why:** `pip-audit` found 34 known vulnerabilities across these three packages; PyJWT sits on
+the auth path and python-multipart parses every upload. Fixed versions per pip-audit: PyJWT ≥ 2.15.0,
+python-multipart ≥ 0.0.31, pytest ≥ 9.0.3.
+**Trade-off accepted:** pytest-asyncio 1.x is a major bump; the suite's session-loop setup
+(`asyncio_default_fixture_loop_scope`, `loop_scope="session"` markers) is supported there but is the
+most likely thing to break, so it gets verified first.
+**Not doing:** `pip-audit --no-deps` only covered pinned packages; transitive packages are not
+touched here, and adding `pip-audit` to CI is a separate item.
+
+### D-020 — Anchor errors: store/return a fixed error code, log the redacted detail server-side
+**Decision:** (1) New `classify_anchor_error(exc)` maps a send/RPC failure to a short fixed code
+(`RPC_UNREACHABLE`, `INSUFFICIENT_FUNDS`, `ALREADY_ANCHORED`, `REVERTED`, `NOT_CONFIGURED`,
+`ANCHOR_FAILED`). That code — never `str(exc)` — is what goes into `blockchain_anchors.error`,
+the `ANCHOR_FAIL` audit `meta`, and `AnchorOut.error`. (2) The full exception text is logged
+server-side at ERROR with the RPC URL's secret parts masked (`redact_secrets`). (3) The API also
+sanitises on read: a stored `error` that is not a known code (rows written before this change)
+is returned as `ANCHOR_FAILED`.
+**Why:** web3 connection errors embed the request URL, and Alchemy/Infura put the API key in the
+URL path; the raw string was served to every `document:view` role and to Auditors (SEC-07).
+Sanitising on read is needed because existing rows already contain raw text.
+**Deviation from "log the full error":** the logged text is the full error *with the URL path /
+configured RPC URL / `/v2/<key>` segments masked*. Logs ship to third parties (Render, Sentry) and
+CLAUDE.md #2 says never log secret values, so logging the unmasked text would just move the leak.
+**Guardrails touched:** #2 (this is the fix), #11 (blockchain service change → tests in the same
+change, including a regression test that the key never reaches an API response).
+**Not doing:** rewriting existing DB rows (read-side sanitising is enough and mutates nothing);
+changing the anchor retry behaviour (that is REL-01, a separate item).
+**Existing-test change:** `test_reanchor_same_document_version_fails_and_records_failed` asserted
+the raw revert text (`"already anchored" in error`); it now asserts the `ALREADY_ANCHORED` code.
+
+### D-021 — Hardhat-node test fixture timeout: diagnosis only, fix proposed, NOT implemented
+**Finding:** not a real product problem; a flaky-under-load test setup. In isolation the
+session fixture's setup (spawn `npx hardhat node` + poll + deploy) takes 5.2–5.9 s (3/3 runs); the
+audited full run errored once, when a frontend build and `tsc` were saturating the CPU (the machine
+also had ~1.5 GB free RAM). Later tests in the same run that needed the chain passed.
+**Proposed fix (awaiting review, no code change yet):** keep the 90 s default; make it
+`HARDHAT_START_TIMEOUT_SEC`-overridable for slow CI; reuse one `httpx.Client` for the readiness poll
+(each bare `httpx.post` rebuilds an SSL context, which is ~1 s of CPU on this machine under load);
+on timeout include the node log tail and process state in the error; retry the spawn once on a new
+port before failing.
+**Why not just raise the timeout:** a longer timeout only hides contention and makes real hangs slower
+to report.
+
+### Outcome of the 2026-10-01 hygiene batch (D-018..D-021)
+Verified with exit codes: backend `pytest` 0 (150 passed, 93.58 % coverage), `ruff check app tests` 0,
+`pip-audit -r requirements.txt --no-deps` 0 (no known vulnerabilities), frontend `tsc -b` 0,
+`eslint .` 0, `vitest run` 0 (53 passed). No suite breakage from the PyJWT / python-multipart /
+pytest 9 / pytest-asyncio 1.x bump. One new, expected signal: PyJWT ≥ 2.15 emits
+`InsecureKeyLengthWarning` for HMAC keys < 32 bytes; the tests (and the dev `.env`) use the 9-byte
+`change_me` placeholder. Not silenced — it is evidence for SEC-09 (enforce a minimum JWT secret length
+outside development), which is a later item. D-021 (Hardhat fixture) remains proposal-only.
+
+---
+
+## 2026-10-01 — Item 1: concurrent transitions (REL-02) + upload overwrite (REL-03) + clearing TAMPERED
+
+Context (reproduced in PRODUCTION_READINESS.md R9–R11): 4 concurrent approvals → 3 `APPROVE` audit rows,
+7 anchor rows, spurious `ANCHOR_FAIL` entries; two concurrent amendment uploads → one HTTP 500 and the
+survivor's DB hash ≠ the stored bytes (the second `put_object` overwrote the first's object at
+`docs/{id}/v{n}`), after which the version is approved, anchored, verifies `MISMATCH`, flags the document
+`TAMPERED`, and nothing can clear the flag.
+
+### D-022 — Root cause and the alternatives considered
+Two distinct races share one pattern — *read, decide, then write unconditionally* — but need different
+fixes because one is about **who gets to act** (state machine) and the other about **where bytes go**
+(storage namespace).
+
+| # | Alternative | Verdict |
+|---|---|---|
+| 1 | **Atomic conditional update (compare-and-swap) on `documents.status`**: `find_one_and_update({_id, status: expected}, {$set: new})`; the one request that matches proceeds, everyone else gets 409. | **Adopt** for every transition. MongoDB is the arbiter, so it holds across gunicorn workers and instances (an in-process lock does not). No new infrastructure, no schema change. |
+| 2 | Per-document lock (asyncio lock, or a Mongo lease document). | Reject. In-process locks fail with `WEB_CONCURRENCY=2`; a Mongo lease adds expiry/cleanup/crash-recovery states and would be held across the chain call (seconds), blocking others on the same document. |
+| 3 | Optimistic concurrency with a `rev` field on every write path. | Reject for now. Every state change here is already status-driven, so status *is* the revision for the state machine; a `rev` would add plumbing to every writer without closing anything alternative 1 leaves open. Revisit if non-status mutations start to race. |
+| 4 | Multi-document Mongo transactions. | Reject. Needs a replica set; local docker-compose runs a standalone `mongo:7`. |
+| 5 | **Unique index**: `(document_id, version_no)` already exists; add a **partial unique index** so a version has at most one *live* (PENDING/CONFIRMED) anchor row. | **Adopt as defence in depth** behind alternative 1 (a duplicate then fails loudly instead of silently double-recording). |
+| 6 | **Content-addressed storage keys**: `docs/{document_id}/v{n}-{sha256}`. Different bytes can never share a key, so an upload cannot overwrite an existing object (identical bytes → identical key → overwriting is a no-op). | **Adopt** for REL-03. Needs no coordination between uploaders and no extra state. Cost: a lost race leaves an orphan blob (deleted best-effort), and the key format changes — old rows keep their stored `storage_key`, and nothing derives a key from `version_no` at read time (checked), so old objects stay valid. |
+| 7 | Reserve-then-write (insert the version row as `UPLOADING`, write the object, flip to `DRAFT`). | Reject. Adds a lifecycle state and crash-cleanup for no benefit once keys are content-addressed. |
+| 8 | Conditional PUT (`If-None-Match: *`) at the object store. | Not relied on. MinIO supports it; Cloudflare R2 behaviour is unverified. Could be added later as belt-and-braces. |
+| 9 | Client `Idempotency-Key` header. | Not needed: the server can recognise an identical retry itself (D-024). |
+
+**Decision:** 1 + 5 + 6, plus natural idempotency for identical retries. Why for this project: the lifecycle
+is a status machine on one Mongo collection, so a CAS on `status` is the smallest change that serialises it;
+the immutability story (Guardrail #7) is about stored bytes, so making overwrite *impossible by
+construction* beats trying to serialise uploaders; and none of it needs Redis, a replica set, or a second
+service (Guardrail #10).
+**Guardrails touched:** #7 (strengthened: a stored object is never overwritten by different content),
+#3/#5 (unchanged: anchoring still only follows `approve`, pipeline order untouched), #11 (workflow state
+machine + storage keys → tests in the same change, including real concurrency tests).
+**Not doing:** touching `document_versions` fields other than the whitelisted status/anchor ones; changing
+the retry loop's behaviour when the chain is down (REL-01); rewriting existing rows or objects.
+
+### D-023 — Transition mechanics (REL-02)
+**Decision:** add `documents.service.claim_status(db, document_id, expected, new)` (CAS; returns the updated
+row or `None`). Every workflow transition claims first, then does its dependent writes, so only the winner
+writes version status, audit rows, or touches the chain:
+`submit` DRAFT→SUBMITTED · `review` SUBMITTED→UNDER_REVIEW (the claim; PENDING_APPROVAL or back-to-DRAFT
+follow for the winner only) · **`approve` PENDING_APPROVAL→APPROVED *before* the first anchor attempt** ·
+`request_amendment` ACTIVE→AMENDMENT_REQUESTED · `archive` ACTIVE→ARCHIVED. A lost claim raises the existing
+`409 ILLEGAL_TRANSITION`. The read-time `_require_status` stays as a fast, descriptive pre-check.
+`blockchain_service.mark_confirmed` becomes a claim too (`PENDING`→`CONFIRMED`, returns whether this call won)
+and `promote_confirmed_anchor` does nothing further when it lost, so a worker pass and `approve()`'s own
+confirm loop can no longer both promote (previously a double `ANCHOR_OK`/`ACTIVATE`).
+**Anchor rows:** new field `live` (`True` on PENDING/CONFIRMED rows, cleared by `mark_failed`; FAILED rows
+never set it) with a partial unique index `{version_id: 1}` where `live == True` (equality-only partial
+filters are supported by every Mongo version we target). Existing rows lack the field and so sit outside the
+index — no startup failure on legacy data, no backfill. If a duplicate live insert ever happens, the
+existing live row is returned and a warning is logged.
+**Not doing:** collapsing `review`'s intermediate UNDER_REVIEW state (Plan Part 5); changing retry counts.
+
+### D-024 — Upload/amend mechanics (REL-03)
+**Decision:** `storage.build_version_key(document_id, version_no, sha256)` → `docs/{id}/v{n}-{sha256}`
+(`sha256` is computed before the write, as it already was). In `create_next_version` the object is written to
+its content-addressed key, then the version row is inserted. If the insert hits the
+`(document_id, version_no)` unique index: load the winning row; **if it has the same sha256 and the same
+uploader, the retry is idempotent** and the winner's result is returned (a double-click yields one version
+and two identical 201s); otherwise raise `409 VERSION_CONFLICT` and delete our object *only if its key differs
+from the winner's*. Any other insert failure also deletes the orphan object. The V1 path
+(`create_document_with_v1`, a brand-new ObjectId) cannot race but gets the same orphan cleanup on failure.
+**Guardrails touched:** #7, #4 (keys still server-generated; still no byte proxying).
+**Existing-test change:** assertions that pinned the old key format (`docs/{id}/v1`) now assert
+`docs/{id}/v1-{sha256}`. THREAT_MODEL row 8 and DB_DESIGN.md are updated to match.
+**Known limitation (stated, not fixed):** versions already corrupted by the old race (DB hash ≠ object)
+stay corrupted; nothing here repairs them (see D-025: they will correctly refuse to clear).
+
+### D-025 — Clearing a TAMPERED flag: `POST /documents/{id}/integrity/clear`
+**Decision:** administrator-only, new permission `integrity:clear` (held only by ADMINISTRATOR; the exact-map
+RBAC tests are updated in the same change). Body `{reason}` (10–1000 chars, required). Flow:
+1. the document must carry `integrity_flag == "TAMPERED"` (else `409 NOT_FLAGGED`);
+2. **re-run the real verification** (`verify_service.verify_version`, so each run writes its normal
+   verification record and `VERIFY_*` audit row) on **every anchored version of the document**; the clear is
+   allowed only if **every one returns `VERIFIED`**. Any other outcome — `MISMATCH`, `NOT_ANCHORED` for a
+   version the DB says is anchored, chain/storage unreachable — refuses with `409 INTEGRITY_STILL_FAILING`
+   (listing version numbers and results) and writes an `INTEGRITY_CLEAR_REFUSED` audit row;
+3. otherwise clear atomically with a conditional update keyed on the `updated_at` read *before*
+   verification (if anything touched the document meanwhile → `409`, retry), record `{by, at, reason}` on the
+   document row (`integrity_cleared`), and write `INTEGRITY_CLEARED` with the reason and verified versions.
+**Why every anchored version, not just the one that flagged:** the flag does not record which version
+tripped it, and a narrower check would let a real mismatch on another version be hidden.
+**Consequence to be aware of:** the intended use is "bytes were restored from backup / a transient storage
+error cleared". Versions already corrupted by the old REL-03 race can never verify, so those documents
+correctly cannot be cleared; remediation is out of scope here and needs a decision.
+**Not geofenced:** like verify and archive, it is an administrative integrity action, not one of the
+upload/approve/amend/download operations CLAUDE.md #5 treats as sensitive; RBAC, audit and re-verification are
+the controls.
+**Reason text** is stored in the audit row as-is (admin-entered; the UI warns not to include personal data,
+as with D-009).
+
+### D-021 (update) — Hardhat fixture hardening: approved and implemented in this round
+Approved by the owner. Implemented in `tests/integration/test_anchor.py` only (a separable change):
+`HARDHAT_START_TIMEOUT_SEC` env override (default 90); one reused `httpx.Client` for readiness polling;
+node-log tail and process state in the timeout error; one retry on a new port before failing.
+
+### Outcome of item 1 (D-021 update, D-022..D-025)
+Verified with exit codes: backend `pytest` 0 (175 passed, 93.69 % coverage), `ruff check app tests` 0,
+`pip-audit -r requirements.txt --no-deps` 0, frontend `tsc -b` 0, `eslint .` 0, `vitest run` 0 (57 passed).
+**Test sensitivity check:** with the compare-and-swap reverted to an unconditional update and the key format
+reverted to `docs/{id}/v{n}` (temporarily, files restored and md5-verified), 5 of the 6 new concurrency tests
+fail (concurrent approvals, conflicting reviews, double submit, amendment overwrite, key collision); the
+sixth (identical-retry idempotency) tests new behaviour and passes either way. The races reproduce reliably
+under `asyncio.gather` because every handler yields at its Mongo/storage awaits.
+**Not covered / limits:** all concurrency is single-process (one event loop, real Mongo/MinIO/Hardhat); the
+cross-process guarantee rests on MongoDB's atomic `findOneAndUpdate` and unique indexes, not on a
+multi-worker test. Legacy anchor rows have no `live` field (outside the unique index, by design). Versions
+already corrupted by the old race remain corrupted and cannot be cleared (they correctly fail verification).

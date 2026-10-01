@@ -91,6 +91,28 @@ POST /api/v1/verify/{version_id}
 ```
 `MISMATCH` is a `200`, not an error — it's a successful check that found tampering.
 
+### Example: clear a TAMPERED flag (administrator only)
+
+```http
+POST /api/v1/documents/{document_id}/integrity/clear
+{"reason": "Original file restored from the nightly backup after the storage incident."}
+
+200 {"document_id": "...", "integrity_flag": null, "verified_versions": [1, 2]}
+409 {"error": {"code": "NOT_FLAGGED", "message": "..."}}
+409 {"error": {"code": "INTEGRITY_STILL_FAILING", "message": "verification still fails (v1: MISMATCH); the flag cannot be cleared"}}
+422  reason missing, shorter than 10 characters, or longer than 1000
+```
+Requires the `integrity:clear` permission (Administrator only). Every anchored version is
+re-verified first; the flag is cleared only if **all** return `VERIFIED` (an unreachable chain or
+storage counts as not verified). Outcomes are audited as `INTEGRITY_CLEARED` /
+`INTEGRITY_CLEAR_REFUSED`, including the reason.
+
+### Concurrency
+State transitions are atomic: of several simultaneous requests for the same transition (for
+example two approvals), exactly one succeeds and the rest get `409 ILLEGAL_TRANSITION`. Two
+different amendment uploads racing for the same next version: one wins, the other gets
+`409 VERSION_CONFLICT`; an identical retry by the same user returns the already-created version.
+
 ## Error format
 
 Most endpoints (everything under `documents`, `versions`, `geofences`, `verify`,
@@ -122,6 +144,9 @@ on `code` (e.g. show "you're outside the authorized location" for `GEOFENCE_DENI
 | `MIME_MISMATCH` | 422 | Magic-byte detection disagrees with the claimed content-type |
 | `STORAGE_UNAVAILABLE` | 503 | Object storage unreachable (upload/verify) |
 | `ILLEGAL_TRANSITION` | 409 | Lifecycle transition not valid from the document's current status |
+| `VERSION_CONFLICT` | 409 | Another upload for the same document/version number was accepted first |
+| `NOT_FLAGGED` | 409 | Integrity-flag clear requested on a document that has no flag |
+| `INTEGRITY_STILL_FAILING` | 409 | Re-verification before clearing the flag did not pass for every anchored version |
 | `VALIDATION_REQUIRED` | 422 | A required field for this transition is missing (e.g. a "changes requested" comment) |
 | `NOT_FOUND` | 404 | Document/version doesn't exist |
 | `RATE_LIMITED` | 429 | Global per-IP rate limit exceeded (`core/rate_limit.py`) |

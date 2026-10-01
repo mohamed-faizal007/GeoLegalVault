@@ -19,6 +19,7 @@ from app.modules.documents import service as documents_service
 from app.modules.documents import workflow
 from app.modules.versions import service as versions_service
 from app.services import blockchain as chain
+from app.services.anchor_errors import REVERTED
 
 
 async def confirm_pending_anchors(db: AsyncIOMotorDatabase) -> int:
@@ -38,7 +39,7 @@ async def confirm_pending_anchors(db: AsyncIOMotorDatabase) -> int:
             continue
 
         if receipt["status"] != 1:
-            await blockchain_service.mark_failed(db, anchor_doc["_id"], "transaction reverted")
+            await blockchain_service.mark_failed(db, anchor_doc["_id"], REVERTED)
             await documents_service.set_anchor_alert(db, document["_id"], True)
             continue
 

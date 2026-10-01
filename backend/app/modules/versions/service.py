@@ -74,6 +74,14 @@ async def get_version_by_id(db: AsyncIOMotorDatabase, version_id: str) -> dict[s
     return await db[DOCUMENT_VERSIONS_COLLECTION].find_one({"_id": oid})
 
 
+async def get_version_by_number(
+    db: AsyncIOMotorDatabase, document_id: ObjectId, version_no: int
+) -> dict[str, Any] | None:
+    return await db[DOCUMENT_VERSIONS_COLLECTION].find_one(
+        {"document_id": document_id, "version_no": version_no}
+    )
+
+
 async def list_versions_for_document(
     db: AsyncIOMotorDatabase, document_id: ObjectId
 ) -> list[dict[str, Any]]:

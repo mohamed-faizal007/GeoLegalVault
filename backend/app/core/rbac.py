@@ -19,6 +19,7 @@ VERIFY_PERFORM = "verify:perform"
 USERS_MANAGE = "users:manage"
 GEOFENCE_MANAGE = "geofence:manage"
 AUDIT_VIEW = "audit:view"
+INTEGRITY_CLEAR = "integrity:clear"
 
 # --- Role -> permission map (Plan Part 3, exact) ----------------------------
 # Administrator manages the system but never the document workflow itself
@@ -34,6 +35,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[str]] = {
             GEOFENCE_MANAGE,
             AUDIT_VIEW,
             DOCUMENT_ARCHIVE,
+            INTEGRITY_CLEAR,
         }
     ),
     Role.LEGAL_OFFICER: frozenset(

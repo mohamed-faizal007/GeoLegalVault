@@ -38,6 +38,7 @@ from app.modules.documents.models import DocumentStatus
 from app.modules.versions import service as versions_service
 from app.modules.versions.models import VersionStatus
 from app.services import blockchain as chain
+from app.services.anchor_errors import REVERTED
 
 _logger = logging.getLogger(__name__)
 
@@ -56,11 +57,45 @@ class ValidationRequired(AppError):
         super().__init__("VALIDATION_REQUIRED", message)
 
 
+class NotFlagged(AppError):
+    status_code = 409
+
+    def __init__(self, message: str):
+        super().__init__("NOT_FLAGGED", message)
+
+
+class IntegrityStillFailing(AppError):
+    status_code = 409
+
+    def __init__(self, message: str):
+        super().__init__("INTEGRITY_STILL_FAILING", message)
+
+
 def _require_status(document: dict[str, Any], expected: DocumentStatus) -> None:
     if document["status"] != expected.value:
         raise IllegalTransition(
             f"document is {document['status']}, expected {expected.value} for this transition"
         )
+
+
+async def _claim(
+    db: AsyncIOMotorDatabase,
+    document: dict[str, Any],
+    expected: DocumentStatus,
+    new: DocumentStatus,
+) -> dict[str, Any]:
+    """The authoritative, atomic status transition (D-023). `_require_status`
+    above only gives a quick, descriptive error from the possibly-stale row the
+    caller read; when two requests race, exactly one claim succeeds and the
+    other gets this 409 *before* it writes anything else."""
+    claimed = await documents_service.claim_status(
+        db, document["_id"], expected=expected, new=new
+    )
+    if claimed is None:
+        raise IllegalTransition(
+            f"document was changed by another request and is no longer {expected.value}"
+        )
+    return claimed
 
 
 async def _current_version(db: AsyncIOMotorDatabase, document: dict[str, Any]) -> dict[str, Any]:
@@ -86,7 +121,7 @@ async def submit(
         raise IllegalTransition("only the current version's uploader may submit it")
 
     document_id = document["_id"]
-    await documents_service.update_status(db, document_id, DocumentStatus.SUBMITTED)
+    await _claim(db, document, DocumentStatus.DRAFT, DocumentStatus.SUBMITTED)
     await versions_service.update_status(db, version["_id"], VersionStatus.SUBMITTED)
     # A resubmission starts a fresh review; the previous comment no longer applies.
     await documents_service.set_review_feedback(db, document_id, comment=None)
@@ -121,7 +156,7 @@ async def review(
     enforce_maker_checker(version["uploaded_by"], actor["_id"])
 
     document_id = document["_id"]
-    await documents_service.update_status(db, document_id, DocumentStatus.UNDER_REVIEW)
+    await _claim(db, document, DocumentStatus.SUBMITTED, DocumentStatus.UNDER_REVIEW)
     await versions_service.update_status(db, version["_id"], VersionStatus.UNDER_REVIEW)
     await audit.record(
         actor_id=actor["_id"],
@@ -179,7 +214,11 @@ async def promote_confirmed_anchor(
     and only ever marked SUPERSEDED, never mutated (Guardrail #7)."""
     document_id = document["_id"]
 
-    await blockchain_service.mark_confirmed(db, anchor_doc["_id"], block_number)
+    # Claim the PENDING -> CONFIRMED step: if a worker pass and approve()'s own
+    # confirm loop both get here, only one promotes (no double ANCHOR_OK /
+    # ACTIVATE) — D-023.
+    if not await blockchain_service.mark_confirmed(db, anchor_doc["_id"], block_number):
+        return await documents_service.get_document_by_id(db, str(document_id))
     await versions_service.mark_confirmed_anchor(
         db,
         version["_id"],
@@ -235,7 +274,10 @@ async def approve(
     document_id = document["_id"]
     settings = get_settings()
 
-    await documents_service.update_status(db, document_id, DocumentStatus.APPROVED)
+    # Claim BEFORE anything touches the chain: of N simultaneous approvals
+    # exactly one gets past this line, so exactly one anchor attempt is made
+    # and no loser can record a false ANCHOR_FAIL (D-023).
+    await _claim(db, document, DocumentStatus.PENDING_APPROVAL, DocumentStatus.APPROVED)
     await versions_service.update_status(db, version["_id"], VersionStatus.APPROVED)
     await audit.record(
         actor_id=actor["_id"],
@@ -299,7 +341,7 @@ async def approve(
         return {"document": refreshed_document, "version": version, "anchor": anchor_doc}
 
     if receipt["status"] != 1:
-        await blockchain_service.mark_failed(db, anchor_doc["_id"], "transaction reverted")
+        await blockchain_service.mark_failed(db, anchor_doc["_id"], REVERTED)
         await documents_service.set_anchor_alert(db, document_id, True)
         _logger.warning(
             "workflow: ANCHOR_FAIL — transaction reverted",
@@ -311,7 +353,7 @@ async def approve(
             target_type="version",
             target_id=version["_id"],
             result="FAILED",
-            meta={"error": "transaction reverted"},
+            meta={"error": REVERTED},
         )
         anchor_doc = {**anchor_doc, "status": AnchorStatus.FAILED.value}
         refreshed_document = await documents_service.get_document_by_id(db, str(document_id))
@@ -347,7 +389,7 @@ async def request_amendment(
     field on POST /documents)."""
     _require_status(document, DocumentStatus.ACTIVE)
     document_id = document["_id"]
-    await documents_service.update_status(db, document_id, DocumentStatus.AMENDMENT_REQUESTED)
+    await _claim(db, document, DocumentStatus.ACTIVE, DocumentStatus.AMENDMENT_REQUESTED)
     await audit.record(
         actor_id=actor["_id"],
         action="AMEND_REQ",
@@ -366,7 +408,7 @@ async def archive(
     anchors are retained untouched; only the document's own status changes."""
     _require_status(document, DocumentStatus.ACTIVE)
     document_id = document["_id"]
-    await documents_service.update_status(db, document_id, DocumentStatus.ARCHIVED)
+    await _claim(db, document, DocumentStatus.ACTIVE, DocumentStatus.ARCHIVED)
     await audit.record(
         actor_id=actor["_id"],
         action="ARCHIVE",
@@ -375,3 +417,79 @@ async def archive(
         result="SUCCESS",
     )
     return await documents_service.get_document_by_id(db, str(document_id))
+
+
+async def clear_integrity_flag(
+    db: AsyncIOMotorDatabase,
+    *,
+    document: dict[str, Any],
+    actor: dict[str, Any],
+    reason: str,
+) -> list[int]:
+    """Admin-only, audited removal of a TAMPERED flag (D-025). It cannot be
+    used to hide a real mismatch: every anchored version is re-verified now,
+    through the real 3-way verification, and the flag is cleared only if all
+    of them return VERIFIED. Returns the version numbers that were verified."""
+    from app.modules.verify import service as verify_service  # avoids an import cycle
+
+    if document.get("integrity_flag") != "TAMPERED":
+        raise NotFlagged("this document has no integrity flag to clear")
+
+    document_id = document["_id"]
+    baseline_updated_at = document["updated_at"]
+    anchored = [
+        v
+        for v in await versions_service.list_versions_for_document(db, document_id)
+        if v.get("anchored")
+    ]
+
+    outcomes: list[tuple[int, str]] = []
+    for version in anchored:
+        try:
+            verdict = await verify_service.verify_version(
+                db, version_id=str(version["_id"]), actor=actor
+            )
+            outcomes.append((version["version_no"], verdict.result))
+        except AppError:  # storage unreachable etc. — not VERIFIED, so not clearable
+            outcomes.append((version["version_no"], "UNVERIFIABLE"))
+
+    failing = [{"version_no": n, "result": r} for n, r in outcomes if r != "VERIFIED"]
+    if not anchored:
+        failing = [{"version_no": None, "result": "NO_ANCHORED_VERSION"}]
+    if failing:
+        await audit.record(
+            actor_id=actor["_id"],
+            action="INTEGRITY_CLEAR_REFUSED",
+            target_type="document",
+            target_id=document_id,
+            result="REFUSED",
+            meta={"reason": reason, "failing": failing},
+        )
+        summary = ", ".join(
+            f"v{f['version_no']}: {f['result']}" if f["version_no"] else f["result"]
+            for f in failing
+        )
+        raise IntegrityStillFailing(
+            f"verification still fails ({summary}); the flag cannot be cleared"
+        )
+
+    cleared = await documents_service.clear_integrity_flag(
+        db,
+        document_id,
+        expected_updated_at=baseline_updated_at,
+        cleared_by=actor["_id"],
+        reason=reason,
+    )
+    if not cleared:
+        raise IllegalTransition("the document changed while it was being verified; retry")
+
+    verified = sorted(n for n, _ in outcomes)
+    await audit.record(
+        actor_id=actor["_id"],
+        action="INTEGRITY_CLEARED",
+        target_type="document",
+        target_id=document_id,
+        result="SUCCESS",
+        meta={"reason": reason, "verified_versions": verified},
+    )
+    return verified

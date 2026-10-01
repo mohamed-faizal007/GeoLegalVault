@@ -65,7 +65,7 @@ already has `replaced_by` set means theft — the whole `family` is revoked).
 | `status` | string | lifecycle state — see Plan Part 5 |
 | `current_version_id` | ObjectId \| null | repointed only at final activation (never mid-review) |
 | `tags` | string[] | |
-| `integrity_flag` | string \| null | set to `"TAMPERED"` by Verify on a MISMATCH; cleared only by manual investigation |
+| `integrity_flag` | string \| null | set to `"TAMPERED"` by Verify on a MISMATCH; cleared only by the admin-only `POST /documents/{id}/integrity/clear`, which re-verifies every anchored version first and records `{by, at, reason}` in `integrity_cleared` |
 | `anchor_pending_alert` | bool | surfaced when anchoring exhausted its retries |
 | `retention_until` | datetime \| null | |
 | `created_at`, `updated_at` | datetime | |
@@ -84,7 +84,7 @@ nothing writes arbitrary fields on an existing document.
 | `version_no` | int | 1, 2, 3, … |
 | `sha256` | string | computed server-side on the exact stored bytes |
 | `prev_version_hash` | string \| null | the prior version's `sha256`; null on V1 — the version chain |
-| `storage_key` | string | server-generated (`docs/{document_id}/v{n}`), never the client filename |
+| `storage_key` | string | server-generated and content-addressed (`docs/{document_id}/v{n}-{sha256}`), never the client filename; rows written before D-024 keep their old `docs/{document_id}/v{n}` key, which stays valid |
 | `size_bytes`, `mime` | int, string | |
 | `status` | string | mirrors the owning document's lifecycle stage for this version |
 | `uploaded_by`, `uploaded_at` | ObjectId, datetime | |
@@ -110,7 +110,8 @@ updates — `update_status` and `mark_confirmed_anchor` (which sets `anchored`/`
 | `block_number` | int \| null | set on confirmation |
 | `contract_address`, `network` | string | |
 | `status` | string | `PENDING \| CONFIRMED \| FAILED` |
-| `error` | string \| null | |
+| `live` | bool \| absent | `true` on PENDING/CONFIRMED rows, `false` once FAILED; a partial unique index on `(version_id, live=true)` allows at most one live anchor per version (absent on rows from before D-023) |
+| `error` | string \| null | a fixed code (`RPC_UNREACHABLE`, `INSUFFICIENT_FUNDS`, `ALREADY_ANCHORED`, `NOT_AUTHORIZED`, `REVERTED`, `NOT_CONFIGURED`, `ANCHOR_FAILED`) — never raw exception text (D-020) |
 | `created_at`, `confirmed_at` | datetime | |
 
 **Indexes:** `tx_hash` (unique, **sparse**), `version_id`. The index is sparse because a

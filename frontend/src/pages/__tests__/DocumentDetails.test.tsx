@@ -1,13 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DocumentOut } from "../../api/documents";
+import { ApiError } from "../../api/http";
 import DocumentDetails from "../DocumentDetails";
 
 const getDocumentMock = vi.fn();
 const listVersionsMock = vi.fn();
+const clearIntegrityFlagMock = vi.fn();
 let mockRole = "LEGAL_OFFICER";
 
 vi.mock("../../api/documents", async () => {
@@ -16,6 +19,7 @@ vi.mock("../../api/documents", async () => {
     ...actual,
     getDocument: (...args: unknown[]) => getDocumentMock(...args),
     listVersions: (...args: unknown[]) => listVersionsMock(...args),
+    clearIntegrityFlag: (...args: unknown[]) => clearIntegrityFlagMock(...args),
   };
 });
 
@@ -227,5 +231,72 @@ describe("A2: corrected-file upload and current-version-uploader submit (item 7)
     listVersionsMock.mockResolvedValue({ items: [version({ uploaded_by: "u1" })] });
     renderDetails();
     expect(await screen.findByRole("button", { name: /submit for review/i })).toBeInTheDocument();
+  });
+});
+
+describe("clearing a TAMPERED integrity flag (D-025)", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    mockRole = "LEGAL_OFFICER";
+  });
+
+  it("is offered to administrators on a flagged document, and to nobody else", async () => {
+    mockRole = "ADMINISTRATOR";
+    getDocumentMock.mockResolvedValue(doc({ integrity_flag: "TAMPERED" }));
+    const { unmount } = renderDetails();
+    expect(await screen.findByRole("button", { name: /clear integrity flag/i })).toBeInTheDocument();
+    unmount();
+
+    for (const role of ["LEGAL_OFFICER", "AUTHORIZED_STAFF", "REVIEWING_OFFICER", "AUDITOR"]) {
+      mockRole = role;
+      const view = renderDetails();
+      await screen.findByText("Contract");
+      expect(screen.queryByRole("button", { name: /clear integrity flag/i })).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it("is not offered when the document is not flagged", async () => {
+    mockRole = "ADMINISTRATOR";
+    getDocumentMock.mockResolvedValue(doc({ integrity_flag: null }));
+    renderDetails();
+    await screen.findByText("Contract");
+    expect(screen.queryByRole("button", { name: /clear integrity flag/i })).not.toBeInTheDocument();
+  });
+
+  it("requires a reason of at least 10 characters before it can be submitted", async () => {
+    mockRole = "ADMINISTRATOR";
+    getDocumentMock.mockResolvedValue(doc({ integrity_flag: "TAMPERED" }));
+    renderDetails();
+    await userEvent.click(await screen.findByRole("button", { name: /clear integrity flag/i }));
+
+    const submit = screen.getByRole("button", { name: /re-verify and clear/i });
+    expect(submit).toBeDisabled();
+    await userEvent.type(screen.getByLabelText(/reason for clearing/i), "too short");
+    expect(submit).toBeDisabled();
+    await userEvent.type(screen.getByLabelText(/reason for clearing/i), " — now long enough");
+    expect(submit).toBeEnabled();
+  });
+
+  it("sends the trimmed reason and shows the server's refusal when verification still fails", async () => {
+    mockRole = "ADMINISTRATOR";
+    getDocumentMock.mockResolvedValue(doc({ integrity_flag: "TAMPERED" }));
+    clearIntegrityFlagMock.mockRejectedValue(
+      new ApiError(
+        409,
+        "INTEGRITY_STILL_FAILING",
+        "verification still fails (v1: MISMATCH); the flag cannot be cleared",
+      ),
+    );
+    renderDetails();
+    await userEvent.click(await screen.findByRole("button", { name: /clear integrity flag/i }));
+    await userEvent.type(
+      screen.getByLabelText(/reason for clearing/i),
+      "  Restored from the nightly backup.  ",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /re-verify and clear/i }));
+
+    expect(clearIntegrityFlagMock).toHaveBeenCalledWith("d-1", "Restored from the nightly backup.");
+    expect(await screen.findByText(/v1: MISMATCH/)).toBeInTheDocument();
   });
 });

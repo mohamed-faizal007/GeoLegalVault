@@ -82,7 +82,10 @@ async def test_update_geofence_name_and_region_records_audit(client, db):
     update_resp = await client.patch(
         f"/api/v1/geofences/{geofence_id}",
         headers=_auth(token),
-        json={"name": "HQ Campus (relocated)", "region": {"type": "Polygon", "coordinates": [new_ring]}},
+        json={
+            "name": "HQ Campus (relocated)",
+            "region": {"type": "Polygon", "coordinates": [new_ring]},
+        },
     )
     assert update_resp.status_code == 200
     body = update_resp.json()

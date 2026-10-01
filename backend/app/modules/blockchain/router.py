@@ -15,6 +15,7 @@ from app.modules.blockchain import service
 from app.modules.blockchain.schemas import AnchorOut, OnchainAnchor
 from app.modules.versions.service import get_version_by_id
 from app.services import blockchain as chain
+from app.services.anchor_errors import public_error
 
 router = APIRouter(prefix="/blockchain", tags=["blockchain"])
 
@@ -60,5 +61,5 @@ async def get_anchor(
         confirmed_at=anchor.get("confirmed_at"),
         etherscan_url=service.etherscan_url(anchor["tx_hash"]) if anchor.get("tx_hash") else None,
         onchain=onchain,
-        error=anchor.get("error"),
+        error=public_error(anchor.get("error")),
     )

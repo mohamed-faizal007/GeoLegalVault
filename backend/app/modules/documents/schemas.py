@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ReviewFeedbackOut(BaseModel):
@@ -56,6 +56,26 @@ class ReviewDecision(BaseModel):
 
 class AmendRequest(BaseModel):
     reason: str = Field(min_length=1)
+
+
+class ClearIntegrityRequest(BaseModel):
+    """Written justification is mandatory and ends up in the audit trail."""
+
+    reason: str = Field(min_length=10, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 10:
+            raise ValueError("reason must be at least 10 non-blank characters")
+        return value
+
+
+class ClearIntegrityResponse(BaseModel):
+    document_id: str
+    integrity_flag: None = None
+    verified_versions: list[int]
 
 
 class TransitionResponse(BaseModel):

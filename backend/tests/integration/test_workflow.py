@@ -296,7 +296,11 @@ async def test_corrected_file_upload_rejected_for_fresh_draft(client, db):
 
     fence_id = await _create_fence(db)
     uploader = await _create_user_and_login(
-        client, db, email="uploader-fresh@example.com", role=Role.AUTHORIZED_STAFF, fence_id=fence_id
+        client,
+        db,
+        email="uploader-fresh@example.com",
+        role=Role.AUTHORIZED_STAFF,
+        fence_id=fence_id,
     )
 
     upload = await _upload(client, uploader)
@@ -333,7 +337,11 @@ async def test_submit_authorizes_by_current_version_uploader_not_original_owner(
         client, db, email="other-d016@example.com", role=Role.AUTHORIZED_STAFF, fence_id=fence_id
     )
     reviewer = await _create_user_and_login(
-        client, db, email="reviewer-d016@example.com", role=Role.REVIEWING_OFFICER, fence_id=fence_id
+        client,
+        db,
+        email="reviewer-d016@example.com",
+        role=Role.REVIEWING_OFFICER,
+        fence_id=fence_id,
     )
 
     upload = await _upload(client, owner)

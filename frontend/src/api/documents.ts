@@ -154,6 +154,21 @@ export function amendDocument(
   );
 }
 
+export interface ClearIntegrityResponse {
+  document_id: string;
+  integrity_flag: null;
+  verified_versions: number[];
+}
+
+/** Admin-only. The server re-verifies every anchored version first and answers
+ * 409 INTEGRITY_STILL_FAILING (with the failing versions) if any does not pass. */
+export function clearIntegrityFlag(
+  documentId: string,
+  reason: string,
+): Promise<ClearIntegrityResponse> {
+  return http.post<ClearIntegrityResponse>(`/documents/${documentId}/integrity/clear`, { reason });
+}
+
 export function archiveDocument(documentId: string): Promise<TransitionResponse> {
   return http.post<TransitionResponse>(`/documents/${documentId}/archive`);
 }

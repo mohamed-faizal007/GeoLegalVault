@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   approveDocument,
   archiveDocument,
+  clearIntegrityFlag,
   downloadDocument,
   getDocument,
   listVersions,
@@ -51,6 +52,8 @@ export default function DocumentDetails() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewComment, setReviewComment] = useState("");
   const [actionError, setActionError] = useState<unknown>(null);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearReason, setClearReason] = useState("");
 
   const docQuery = useQuery({
     queryKey: ["document", documentId],
@@ -109,6 +112,17 @@ export default function DocumentDetails() {
     onError: setActionError,
   });
 
+  const clearFlagMutation = useMutation({
+    mutationFn: () => clearIntegrityFlag(documentId, clearReason.trim()),
+    onSuccess: () => {
+      setClearOpen(false);
+      setClearReason("");
+      setActionError(null);
+      invalidate();
+    },
+    onError: setActionError,
+  });
+
   const downloadMutation = useMutation({
     mutationFn: async () => downloadDocument(documentId, await getCurrentLocation()),
     onSuccess: (res) => window.open(res.url, "_blank", "noopener,noreferrer"),
@@ -159,6 +173,8 @@ export default function DocumentDetails() {
     hasPermission(role, PERMISSIONS.DOCUMENT_AMEND);
   // Backend only archives ACTIVE documents (workflow.archive); SUPERSEDED would 409.
   const canArchive = doc.status === "ACTIVE" && hasPermission(role, PERMISSIONS.DOCUMENT_ARCHIVE);
+  const canClearFlag =
+    doc.integrity_flag === "TAMPERED" && hasPermission(role, PERMISSIONS.INTEGRITY_CLEAR);
   const canDownload = !!doc.current_version_id && hasPermission(role, PERMISSIONS.DOCUMENT_VIEW);
   const canVerify = !!doc.current_version_id && hasPermission(role, PERMISSIONS.VERIFY_PERFORM);
 
@@ -249,6 +265,9 @@ export default function DocumentDetails() {
             onClick={() => navigate(`/documents/${documentId}/amend`)}
           />
         )}
+        {canClearFlag && (
+          <ActionButton label="Clear integrity flag" onClick={() => setClearOpen((open) => !open)} />
+        )}
         {canArchive && (
           <ActionButton
             label="Archive"
@@ -310,6 +329,37 @@ export default function DocumentDetails() {
               onClick={() => reviewMutation.mutate("changes_requested")}
             />
             <ActionButton label="Cancel" onClick={() => setReviewOpen(false)} />
+          </div>
+        </div>
+      )}
+
+      {clearOpen && canClearFlag && (
+        <div className="card-pad">
+          <h2 className="text-sm font-semibold text-ink">Clear integrity flag</h2>
+          <p className="mt-1 text-xs text-muted">
+            Verification is re-run on every anchored version first. The flag is only cleared if
+            all of them verify; otherwise it stays and you will see which versions fail. Your
+            reason is written to the audit log.
+          </p>
+          <textarea
+            aria-label="Reason for clearing the integrity flag"
+            value={clearReason}
+            onChange={(e) => setClearReason(e.target.value)}
+            placeholder="Reason (required, at least 10 characters) — e.g. original file restored from backup; no personal data"
+            className="input mt-2"
+            rows={3}
+            maxLength={1000}
+          />
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={clearFlagMutation.isPending || clearReason.trim().length < 10}
+              onClick={() => clearFlagMutation.mutate()}
+            >
+              {clearFlagMutation.isPending ? "Re-verifying…" : "Re-verify and clear"}
+            </button>
+            <ActionButton label="Cancel" onClick={() => setClearOpen(false)} />
           </div>
         </div>
       )}
