@@ -1,4 +1,6 @@
-fastapi==0.115.6
+fastapi==0.133.1
+# Pinned explicitly (D-030): FastAPI no longer caps it, and pip-audit must see it.
+starlette==1.3.1
 uvicorn[standard]==0.34.0
 gunicorn==23.0.0
 motor==3.6.0
@@ -17,3 +19,4 @@ pytest==9.0.3
 pytest-asyncio==1.3.0
 pytest-cov==6.0.0
 ruff==0.8.4
+pip-audit==2.10.1

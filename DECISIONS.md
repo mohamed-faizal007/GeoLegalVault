@@ -629,6 +629,33 @@ the mirror case (an in-flight upload that validated DRAFT before the claim and i
 same version-number index but not eliminated without multi-document atomicity. Not claimed closed.
 **Guardrails touched:** #7 (no version content touched), #11 (deterministic test in the same change).
 
+### D-030 — Starlette advisories: upgrade FastAPI 0.115.6 → 0.133.1 and pin Starlette 1.3.1
+**Audit result:** `pip-audit` reports 14 rows = 7 distinct advisories (each listed twice), all in Starlette 0.41.3,
+which FastAPI 0.115.6 pins (`starlette<0.47`). Severity is the OSV CVSS vector:
+| Advisory | CVE | CVSS impact | Fixed in | Reachable here? |
+|---|---|---|---|---|
+| PYSEC-2026-1941 | CVE-2025-54121 | A:L (5.3) | 0.47.2 | **Yes, mildly** — multipart `request.form()` rolling a large upload to disk blocks the event loop (our upload route; capped at 11 MiB by D-028, so bounded, not removed) |
+| PYSEC-2026-249 | CVE-2026-54283 | A:H (7.5) | 1.3.1 | **Partly** — `request.form()` limits ignored for *urlencoded* bodies. Our upload route is multipart; the geofence dependency calls `request.form()` for `application/x-www-form-urlencoded` too, but D-028's byte cap (1 MiB for non-upload routes) bounds it |
+| PYSEC-2026-248 | CVE-2026-54282 | I:L (5.3) | 1.3.0 | **No in practice** — affects code that rebuilds `request.url`; we only read `request.url.path` (logging, rate limit) |
+| PYSEC-2026-161 | CVE-2026-48710 | no vector | 1.0.1 | **No in practice** — Host-header-injected `request.url`; same reasoning, we never build URLs from it |
+| PYSEC-2026-1942 | CVE-2025-62727 | A:H (7.5) | 0.49.1 | **No** — `FileResponse`/`StaticFiles` Range DoS; the API serves no files (downloads are pre-signed storage URLs, Guardrail #4) |
+| PYSEC-2026-2280 | CVE-2026-48817 | I:L (5.3) | 1.1.0 | **No** — `HTTPEndpoint` without `methods=`; unused (FastAPI routes only) |
+| PYSEC-2026-2281 | CVE-2026-48818 | C:H (7.5) | 1.1.0 | **No** — `StaticFiles` UNC path on Windows; unused |
+So none is a high-impact hole in our actual paths, but two touch code we do use, and the audit is a CI gate.
+**Alternatives:** (a) stay on 0.115.x/0.41–0.46 and accept/ignore advisories — fails the gate, leaves 1941/249;
+(b) bump to the newest Starlette 0.x (0.49.1 clears only 1941/1942) — does not clear the rest, all fixes beyond are
+1.x; (c) **FastAPI 0.133.1 + `starlette==1.3.1`** — smallest set that clears all seven: 1.3.1 is the highest fix
+version; FastAPI 0.133.0 is the first release that drops `starlette<1.0`, and 0.133.1 is its patch release;
+(d) latest FastAPI (0.142.x) — larger jump than needed.
+**Breaking?** Starlette 0.41 → 1.3 is a **major** bump and FastAPI 0.115 → 0.133 is 18 minors of a 0.x project
+(each may break); nothing in our code uses removed APIs that we know of, which is verified by the test suite below,
+not assumed. The #5 middleware depends on the ASGI `receive` stream and `request.form()`, so the body-limit tests
+and the full suite are re-run on the new versions.
+**Guardrail tooling:** `pip-audit` is added to `backend/requirements.txt` (the project's single requirements file,
+which already holds pytest/ruff) and to CI after Ruff; CI frontend job gains `npm audit --omit=dev`. Starlette is
+pinned explicitly so the audit sees it and a future FastAPI bump cannot silently move it.
+**Rollback:** `fastapi==0.115.6`, no Starlette pin (resolved to 0.41.3).
+
 ### D-031 — Accepted residual limits of D-028 (owner decision, 2026-10-04)
 Accepted as-is: (1) JSON routes are parsed by FastAPI before their dependencies run, bounded by
 `MAX_JSON_BODY_KB`; (2) `JSONLoggingMiddleware` records an aborted oversized request as 400 instead of 413;

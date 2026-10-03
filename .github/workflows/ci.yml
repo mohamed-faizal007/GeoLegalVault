@@ -54,6 +54,9 @@ jobs:
       - name: Ruff lint
         run: python -m ruff check app tests
 
+      - name: Dependency audit (known vulnerabilities fail the build)
+        run: python -m pip_audit -r requirements.txt --no-deps
+
       - name: pytest (coverage enforced via pyproject.toml, fail-under 60%)
         env:
           MONGODB_URI: mongodb://localhost:27017
@@ -95,6 +98,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
       - run: npm run test
       - run: npm run build
