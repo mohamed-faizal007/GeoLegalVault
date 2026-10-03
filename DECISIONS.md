@@ -684,3 +684,31 @@ real uvicorn on Starlette 1.3.1 still returns 413 and stops reading at the cap. 
 **Limits of this verification:** pip-audit/OSV severities come from the advisories' CVSS vectors; the "reachable?"
 column is my reading of our code, not a scanner result. The `starlette` 0.x → 1.x and 18-minor FastAPI jump is
 exercised only by this repo's tests (no staging). CI changes (audit steps) have not been run in GitHub Actions.
+
+### D-033 — Oversize rejection must be readable by the client: drop `Connection: close` (fixes a D-028 defect)
+**Found by** the real-HTTP smoke test (`scripts/smoke_starlette_upgrade.py`), which the ASGI-level tests could not
+see: when an upload exceeds the cap, the 413 is sent correctly but the client usually cannot read it — it gets a
+connection reset (`WinError 10053/10054`). Cause: D-028's response carried `Connection: close`, so uvicorn closes the
+socket while request bytes are still unread; closing with unread data makes the OS send a reset, which can destroy
+the response the client has not yet read. A browser would report a network error instead of "file too large".
+**Alternatives**
+1. **Remove the `Connection: close` header** (chosen). uvicorn then keeps the connection open after the response,
+   stops reading under its own back-pressure, and the client reads the 413 normally.
+2. *Keep the header and drain a bounded amount of the body before responding.* Works only if the client has sent no
+   more than the bound; a 15 MiB body with a 1 MiB drain still ends in a reset, and the drain delays the response and
+   reads attacker bytes we just decided not to read.
+3. *Respond, then keep draining in the background until the client stops or a deadline passes.* Delivers the 413
+   reliably, but holds a task reading hostile data per request, which is the opposite of "abort at the cap".
+**Why (1):** smallest change, no extra reading, and verified (see below). It changes no limit or status code.
+**Slow-body trade-off, stated plainly (measured on uvicorn 0.34 / httptools, default settings):** after the 413 the
+connection is *not* closed by us. A client that goes idle is disconnected by uvicorn's keep-alive timeout
+(`timeout_keep_alive`, 5 s default). A client that keeps trickling bytes keeps the connection open — in a 20 s probe
+the server stayed connected and discarded ~400 KB — so a hostile client can hold a connection slot open as long as it
+keeps sending. That is the slow-body class D-031 already defers to the deployment layer (server/proxy read
+timeouts); this change does not make it worse than any other slow request, but it also does not bound it. The
+same-time `Connection: close` approach avoided it only by making the client unable to read our answer.
+**Guardrails touched:** #5 (the rejection is now actually delivered), #11 (a real-socket test in the same change).
+**Test:** `backend/tests/integration/test_body_limit_realsocket.py` starts a real uvicorn on a local port and checks
+the client can read PAYLOAD_TOO_LARGE / FILE_TOO_LARGE for known-length, chunked and unauthenticated oversize
+bodies, and that `/health` and a login stay prompt while a half-sent upload hangs open. It fails with the header back.
+**Not doing:** draining, background tasks, changing uvicorn/gunicorn settings (deployment layer, OPS-01).

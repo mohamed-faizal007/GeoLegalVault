@@ -9,6 +9,11 @@ stream:
    reading, and swallows whatever the app emits afterwards. This covers
    chunked bodies and a Content-Length that understates the real body.
 
+The 413 deliberately does NOT carry `Connection: close` (D-033): closing a socket that
+still has unread request bytes makes the OS reset the connection, and the client then
+cannot read the 413. Leaving the connection to the server lets the answer arrive; an idle
+client is dropped by the server's keep-alive timeout.
+
 The size check runs before authentication on purpose: rejecting early reveals
 nothing. Per-route caps: the document upload gets MAX_UPLOAD_MB (+ multipart
 framing allowance); everything else gets MAX_JSON_BODY_KB.
@@ -45,7 +50,6 @@ async def _respond(send: Send, status: int, code: str, message: str) -> None:
             "headers": [
                 (b"content-type", b"application/json"),
                 (b"content-length", str(len(body)).encode()),
-                (b"connection", b"close"),
             ],
         }
     )
