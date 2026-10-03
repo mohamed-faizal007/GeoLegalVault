@@ -15,7 +15,10 @@ to unwind once shipped. If anything elsewhere in the docs conflicts with this fi
 as a bug to flag, not license to ignore the guardrail.
 
 Every guardrail below was cross-checked against the actual implementation (not just the comment
-claiming it) as of this writing. All 12 hold.
+claiming it). #2, #5 and #9 were re-checked and corrected on 2026-10-04 (see their "Enforced at" and
+"Known limits" notes and `DECISIONS.md` D-027/D-028). Open mismatches that are tracked but not yet fixed:
+#10 (the confirmation worker exists but is not in the compose/deploy path, REL-01). Where a guardrail
+says "Known limits", those are things the enforcement does NOT cover; do not read it as a guarantee.
 
 ---
 
@@ -47,7 +50,10 @@ permanent even after a "fix" commit.
 **Enforced at:**
 - [`.gitignore`](.gitignore) — excludes `.env`, `.env.*`, keeps `!.env.example`; also excludes `*.key`.
 - [`contracts/hardhat.config.ts:8`](contracts/hardhat.config.ts#L8) — private key read from `contracts/.env`, never hardcoded.
-- `APP_ENV != development` fails startup if any required secret is still a placeholder (per `docs/THREAT_MODEL.md` row 20).
+- `APP_ENV != development` fails startup if any required secret is still a placeholder (per `docs/THREAT_MODEL.md` row 20). The checked set is `JWT_SECRET`, `MONGODB_URI`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `SEPOLIA_RPC_URL`, `SERVICE_WALLET_PRIVATE_KEY`, `CONTRACT_ADDRESS` ([`backend/app/core/config.py`](backend/app/core/config.py)).
+- Anchor failures store and return a fixed error code, never the raw exception text (which can embed an RPC URL with an API key); the full text is logged only with URL secrets masked ([`backend/app/services/anchor_errors.py`](backend/app/services/anchor_errors.py), `DECISIONS.md` D-020).
+
+**Known limits:** the placeholder check does not test secret *strength* (a 1-character `JWT_SECRET` passes in production) and there is no rotation procedure for the JWT secret or the wallet key (SEC-09, open).
 
 **Don't:** commit a real `.env`, paste a real key/URI into a docstring or test fixture, or log
 secret values (the blockchain service docstring at `backend/app/services/blockchain.py:5-6`
@@ -110,6 +116,10 @@ makes the whole control theater.
 - [`backend/app/modules/documents/service.py:3`](backend/app/modules/documents/service.py#L3) — upload flow docstring: validate → put_object → ... in guardrail-numbered order.
 - [`docs/THREAT_MODEL.md:55`](docs/THREAT_MODEL.md#L55) — confirms the pipeline runs in this order on every sensitive endpoint; threat row 15 confirms no endpoint reads a client "allowed" field.
 - [`frontend/src/api/http.ts:137`](frontend/src/api/http.ts#L137), [`frontend/src/components/LocationGate.tsx:11`](frontend/src/components/LocationGate.tsx#L11) — frontend explicitly treats geofence allow/deny as server-decided; client-side checks are hints only.
+- [`backend/app/core/body_limit.py`](backend/app/core/body_limit.py) — pure-ASGI middleware that enforces the request-body size limit *before the body is read*: `Content-Length` over the cap is rejected with 413 unread; otherwise bytes are counted as they stream and the request is aborted at the cap (covers chunked bodies and an understated `Content-Length`). Caps: `MAX_UPLOAD_MB` + 1 MiB framing for `POST /api/v1/documents`, `MAX_JSON_BODY_KB` for everything else.
+- [`backend/app/modules/documents/router.py`](backend/app/modules/documents/router.py) `upload_document` — declares no `File()`/`Form()` parameters, so JWT → RBAC → geofence dependencies run first and the multipart body is parsed only afterwards (`request.form()` inside the handler). An unauthenticated caller never causes the upload body to be read. Tests: `backend/tests/integration/test_body_limit.py`.
+
+**Known limits:** the size check runs before authentication (an oversized unauthenticated request gets 413, not 401 — by design, it reveals nothing). JSON routes (≤ `MAX_JSON_BODY_KB`) are still parsed by FastAPI before their dependencies run; only the multipart upload route is reordered, and login needs its body before auth anyway. The geofence dependency falls back to parsing the (capped) multipart form when the location headers are absent. The request logger sits inside the cap and records an aborted request as 400, not 413. Slow-body (slowloris) attacks are not addressed in the app; they are a deployment-layer item (server/proxy read timeouts, tracked under OPS-01 in `PRODUCTION_READINESS.md`). Real HTTP servers already stop at `Content-Length` bytes, so the understated-length case is chiefly an ASGI-layer protection.
 
 **Don't:** add a new sensitive endpoint that skips RBAC or geofence checks "temporarily," or
 add any code path that reads/trusts a client-sent geofence result.
@@ -186,10 +196,20 @@ Every coordinate input is validated for order — this is called out as "the #1 
 people default to, so it's an easy, silent way to put a geofence in the wrong place on Earth.
 
 **Enforced at:**
-- [`backend/app/modules/geofences/schemas.py:1-24`](backend/app/modules/geofences/schemas.py#L1-L24) — `_validate_position` checks `lng` against `[-180, 180]` and `lat` against `[-90, 90]` specifically to catch an accidental swap.
+- [`backend/app/modules/geofences/schemas.py`](backend/app/modules/geofences/schemas.py) — `_validate_position` checks `lng` against `[-180, 180]` and `lat` against `[-90, 90]`. This rejects a swapped `[lat, lng]` pair **only when the real longitude has |lng| > 90**.
+- [`backend/app/modules/geofences/bbox.py`](backend/app/modules/geofences/bbox.py) + the geofence router — optional `GEOFENCE_ALLOWED_BBOX` (`minLng,minLat,maxLng,maxLat`): when set, every vertex and the optional `center` of a created/updated fence must fall inside it (`422 GEOFENCE_OUTSIDE_REGION`). Startup logs a warning outside development when it is unset.
+- [`frontend/src/components/admin/GeofenceManagementPanel.tsx`](frontend/src/components/admin/GeofenceManagementPanel.tsx) — advisory preview: shows the ring's approximate centre as `°N/°S °E/°W` and requires an "I have checked this is the intended location" tick. UI-only; a direct API call bypasses it.
+- Tests that pin both sides: [`backend/tests/api/test_geofence_swap_detection.py`](backend/tests/api/test_geofence_swap_detection.py) (cases that are caught **and cases that are not**).
+
+**Known limits (do not claim a swap is "caught" beyond these):**
+- A swap with |real lng| ≤ 90 (e.g. all of India, Europe, Africa — including the seeded demo fence at 78.15°E 11.67°N) is a valid coordinate pair and **is accepted** unless `GEOFENCE_ALLOWED_BBOX` is configured and the swapped position falls outside it.
+- With a bounding box, a swap is still missed when the transposed vertices also lie inside the box (a box that contains its own transpose, or a fence near the lat = lng diagonal), and any error that stays inside the box (wrong city, typo) is not a swap and is not caught.
+- The admin preview/confirmation is a UI aid only; it is bypassed by a direct API call (the server does not require or check it).
+- The box is off by default; the preview is advisory. Neither is a guarantee of correct placement (see also #6).
 
 **Don't:** accept or construct a coordinate pair as `[lat, lng]` anywhere in geofence-related
-code, even "just for one internal helper" — the whole point is there's no exception.
+code, even "just for one internal helper" — the whole point is there's no exception. Don't describe
+the range check or the bounding box as "catching lat/lng swaps" without the limits above.
 
 ---
 

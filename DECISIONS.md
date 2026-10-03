@@ -666,3 +666,21 @@ Doc notes: one-line dated notes pointing to D-027 were added where `GeoLegalVaul
 `IMPLEMENTATION_PROMPT.md` (lines 290, 303, 312) and `TEST_PLAN.md` (row for swapped input) say range checks catch
 swapped coordinates; no text was rewritten.
 
+### Outcome of step 2 (D-027 .. D-031)
+Verified with exit codes (2026-10-04): backend `pytest` 0 (204 passed, 93.79 % coverage) on FastAPI 0.133.1 /
+Starlette 1.3.1, `ruff check app tests` 0, `pip-audit -r requirements.txt --no-deps` 0 ("No known
+vulnerabilities"), `pip check` 0, frontend `tsc -b` 0, `eslint .` 0, `vitest run` 0 (62 passed), `npm audit
+--omit=dev --audit-level=high` 0.
+**Amendment race (D-029):** `tests/integration/test_concurrency.py` (8 tests incl. the previously failing
+`test_concurrent_identical_amendment_upload_is_idempotent` and two new deterministic regression tests) looped 20×
+on the old Starlette: 20/20 runs passed; looped again 10× after the Starlette upgrade: 10/10. Before the fix the
+same test failed 6/6 in isolation at the committed code. **Not fixed, reported:** `submit()` reads the latest
+version before claiming `DRAFT → SUBMITTED` (see D-029).
+**Starlette (D-030):** 7 distinct advisories, 14 audit rows; none reachable in a high-impact way, two touch code we
+use (multipart/urlencoded `request.form()`), all cleared by FastAPI 0.133.1 + `starlette==1.3.1`. The #5 middleware
+tests (9) and the swap-detection tests (17) pass unchanged on the new versions; a manual chunked-body check against
+real uvicorn on Starlette 1.3.1 still returns 413 and stops reading at the cap. `pip-audit` is now in
+`requirements.txt` and CI; CI's frontend job runs `npm audit --omit=dev --audit-level=high`.
+**Limits of this verification:** pip-audit/OSV severities come from the advisories' CVSS vectors; the "reachable?"
+column is my reading of our code, not a scanner result. The `starlette` 0.x → 1.x and 18-minor FastAPI jump is
+exercised only by this repo's tests (no staging). CI changes (audit steps) have not been run in GitHub Actions.
