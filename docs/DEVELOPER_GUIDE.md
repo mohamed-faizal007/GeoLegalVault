@@ -80,6 +80,81 @@ python scripts/seed.py --seed-documents                                         
 See `scripts/seed.py`'s module docstring for the full flag list, and `DEPLOYMENT.md` for
 how this is used against a real cloud deployment.
 
+## Moving a dev environment from MinIO to RustFS (D-034)
+
+The compose volume is now `storage_data` (RustFS) instead of `minio_data` (MinIO), so it starts
+empty. Mongo still has rows pointing at objects that only exist in the old MinIO volume.
+Until you do one of the two paths below:
+
+- **Download** still returns 200 with a pre-signed URL (the API does not check the object exists);
+  fetching that URL returns 404 `NoSuchKey`.
+- **Verify** returns 503 `STORAGE_UNAVAILABLE` ("could not read the stored file") — not MISMATCH,
+  because the bytes can't be read at all.
+- Anchors on Sepolia are unaffected; they hold only hashes.
+
+Neither path below deletes anything, and neither touches the old volume
+`geolegalvault_minio_data` or `C:\Faizal\docker-backups\minio-images.tar`. PowerShell, from the repo root.
+
+### Path A — copy the old objects across (keeps your Mongo data)
+
+```powershell
+# 1. Free port 9000. `stop` keeps the container and its volume; nothing is removed.
+docker stop geolegalvault-minio-1
+
+# 2. Snapshot the old volume. The original is mounted read-only; the copy goes to a NEW volume.
+docker volume create glv_minio_snapshot
+docker run --rm --pull never -v geolegalvault_minio_data:/from:ro -v glv_minio_snapshot:/to alpine cp -a /from/. /to/
+
+# 3. Serve the snapshot (cached image, no pull) on port 9100, with the same keys as .env.
+$ak = (Select-String -Path .env -Pattern '^STORAGE_ACCESS_KEY=(.*)$').Matches.Groups[1].Value.Trim()
+$sk = (Select-String -Path .env -Pattern '^STORAGE_SECRET_KEY=(.*)$').Matches.Groups[1].Value.Trim()
+docker run -d --name glv-minio-snapshot --pull never -p 9100:9000 -v glv_minio_snapshot:/data `
+  -e "MINIO_ROOT_USER=$ak" -e "MINIO_ROOT_PASSWORD=$sk" minio/minio:latest server /data
+
+# 4. Start the new store (creates the empty private bucket).
+docker compose up -d storage storage-init
+
+# 5. Copy. Dry run first; --only-referenced skips objects no document_versions row points at
+#    (the test suite writes leftovers into the dev bucket).
+backend\.venv\Scripts\python.exe scripts\migrate_storage.py --source-endpoint http://localhost:9100 --only-referenced --dry-run
+backend\.venv\Scripts\python.exe scripts\migrate_storage.py --source-endpoint http://localhost:9100 --only-referenced
+```
+
+`migrate_storage.py` only reads the source, never overwrites a destination object (different bytes
+already there = reported as CONFLICT and left alone), re-reads every copied object and compares its
+SHA-256, and ends with a cross-check against Mongo: any version row whose key exists in neither
+store is listed as `MISSING EVERYWHERE` and the exit code is non-zero. Re-running is safe.
+Finally `docker compose up -d` for the rest of the stack, then spot-check a download and a verify.
+
+Optional cleanup of the temporary pieces only (not the original volume):
+`docker rm -f glv-minio-snapshot; docker volume rm glv_minio_snapshot`.
+
+Known: on the author's dev data, 5 of 43 version rows already pointed at objects that were missing
+from the old MinIO too; they fail the same way before and after the switch. Re-seed (Path B) or
+leave them.
+
+### Path B — start over, Mongo and storage together
+
+`seed.py --demo` creates only the users and the HQ geofence. The documents come from
+`--seed-documents`, which also writes (and tampers) objects in storage, so run both. It refuses to
+run when >= `--count` synthetic documents already exist, and dropping collections is destructive,
+so use a **new database name** instead and leave the old one in place:
+
+```powershell
+# Use a fresh Mongo database. Put MONGODB_DB=geolegalvault_v2 in .env (the backend container reads it);
+# for the seed commands below it is also set in the shell so they agree with the backend.
+$env:MONGODB_DB = "geolegalvault_v2"
+
+docker compose up -d mongo storage storage-init      # needs port 9000 free: docker stop geolegalvault-minio-1
+backend\.venv\Scripts\python.exe scripts\seed.py --demo
+backend\.venv\Scripts\python.exe scripts\seed.py --seed-documents        # --count 35 by default
+```
+
+Caveat: with the Sepolia settings from `.env`, `--seed-documents` anchors for real on Sepolia (testnet
+gas from the service wallet, one transaction per approved document). To avoid that, point
+`SEPOLIA_RPC_URL`/`CONTRACT_ADDRESS` at a local Hardhat node (see above) for the seeding run. To go back to the old data, restore
+`MONGODB_DB=geolegalvault` and run Path A.
+
 ## Testing
 
 ```bash
