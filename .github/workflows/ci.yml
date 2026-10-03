@@ -42,14 +42,16 @@ jobs:
           npm ci
           npx hardhat compile
 
-      - name: Start Mongo + MinIO (docker-compose — same config as local dev)
+      - name: Start Mongo + RustFS (docker-compose — same config as local dev)
         working-directory: .
-        run: docker compose up -d mongo minio minio-init
+        run: docker compose up -d mongo storage storage-init
 
-      - name: Wait for Mongo + MinIO to report healthy
+      - name: Wait for Mongo + RustFS to report healthy
         run: |
           timeout 60 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" geolegalvault-mongo-1 2>/dev/null)" = "healthy" ]; do sleep 1; done'
-          timeout 60 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" geolegalvault-minio-1 2>/dev/null)" = "healthy" ]; do sleep 1; done'
+          timeout 60 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" geolegalvault-storage-1 2>/dev/null)" = "healthy" ]; do sleep 1; done'
+          # `up -d` does not wait for the one-shot bucket init; tests need the bucket to exist.
+          timeout 60 bash -c 'until [ "$(docker inspect -f "{{.State.Status}} {{.State.ExitCode}}" geolegalvault-storage-init-1 2>/dev/null)" = "exited 0" ]; do sleep 1; done'
 
       - name: Ruff lint
         run: python -m ruff check app tests

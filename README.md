@@ -33,14 +33,14 @@ Edit `.env` and fill in real values before deploying anywhere beyond local dev. 
 docker-compose up
 ```
 
-This starts MongoDB, MinIO (S3-compatible object storage), a placeholder Hardhat node service
+This starts MongoDB, RustFS (S3-compatible object storage; MinIO's images are gone, see DECISIONS.md D-034), a placeholder Hardhat node service
 (implemented in Phase 5), and the FastAPI backend. Once it's up:
 
 ```bash
 curl http://localhost:8000/api/v1/health
 ```
 
-MinIO console: http://localhost:9001 (login with `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` from `.env`).
+RustFS console: http://localhost:9001 (login with `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` from `.env`).
 
 ## Run the backend locally (without Docker)
 

@@ -712,3 +712,70 @@ same-time `Connection: close` approach avoided it only by making the client unab
 the client can read PAYLOAD_TOO_LARGE / FILE_TOO_LARGE for known-length, chunked and unauthenticated oversize
 bodies, and that `/health` and a login stay prompt while a half-sent upload hangs open. It fails with the header back.
 **Not doing:** draining, background tasks, changing uvicorn/gunicorn settings (deployment layer, OPS-01).
+
+### D-034 — Replace MinIO with RustFS for local dev and CI (MinIO's images are gone; CI runs #16–#19 failed)
+**Problem.** `docker compose up -d mongo minio minio-init` fails in CI and for anyone cloning: MinIO removed
+`minio/minio` and `minio/mc` from Docker Hub, and the quay.io tags are not pullable anonymously either (real
+`docker pull` of `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z` and `quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z`
+both fail: `401 Unauthorized` on the manifest HEAD). `mongo:7` and `node:20-alpine` pull anonymously. What the
+backend needs from storage is small and exact: private bucket, SigV4 `put/get/delete`, and **pre-signed GET URLs
+that the server actually validates** (tests fetch one, and Guardrail #4 says the bucket is only reachable through
+them). Production (Cloudflare R2) is not involved; this is the dev/CI stand-in only.
+**Alternatives** (each candidate was pulled for real and the full backend suite — 211 tests — run against it from a
+checkout with no `.env`, plus a probe for what the server does with an anonymous GET, a valid pre-signed URL, one with
+a tampered signature, and an expired one)
+- **(a) Mirror the saved MinIO images to `ghcr.io/<owner>/…`.** Zero code change and the exact server we tested on.
+  Against: the image is frozen at 2025-09 and will never get a security fix; MinIO is AGPL-3.0, so publishing a
+  public mirror makes *us* a redistributor with source-offer obligations (a private mirror breaks "anyone cloning");
+  it ties every clone to a personal-account package that must stay public and alive; and it keeps an unmaintained
+  object store in the CI path. **Not executed:** the `gh` token in the keyring is currently invalid
+  (`gh auth status`: "token in keyring is invalid"), so it would also need `gh auth refresh -h github.com -s write:packages`
+  in a browser. Not needed for the recommendation.
+- **(b) A maintained S3-compatible server.** All three pulled and passed all 211 tests:
+  | | image (pulled) | licence | anon GET | valid presign | tampered sig | expired | notes |
+  |---|---|---|---|---|---|---|---|
+  | RustFS | `rustfs/rustfs:1.0.1` | Apache-2.0 | 403 | 200 | 400 | 403 | one process, port 9000 like MinIO, has `curl` for a healthcheck; 210/211 on the first full run, see below |
+  | SeaweedFS | `chrislusf/seaweedfs:latest` (v4.48) | Apache-2.0 | 403 | 200 | 403 | 403 | master+volume+filer+s3 in one container, ports 8333/9333/8080/8888; Hub has no stable version tag, so only a digest pins it; the `wget` healthcheck I tried reported unhealthy |
+  | Garage | `dxflrs/garage:v2.4.1` | **AGPL-3.0** | – | – | – | – | image has no shell, so bucket/key bootstrap needs `garage layout assign/apply`, `key import`, `bucket allow` run from outside; region must be `garage`, not `auto` (`STORAGE_REGION=garage`); suite passed only after that manual bootstrap |
+  (Garage's presign probe was not run; its bootstrap cost already ruled it out.)
+- **(c) A mock S3 server for tests only** (`motoserver/moto:5.2.3`). 211/211 pass, **but it accepts a tampered
+  signature (200) and an expired URL (200)** — it does not validate pre-signed URLs, so
+  `test_download_returns_working_presigned_url` would pass against a server that cannot tell a valid URL from a forged
+  one. For a project whose guarantee is "private bucket + short-lived pre-signed URL", that makes the storage tests
+  vacuous. Also two code paths (mock in CI, real server in dev). Rejected.
+**Chosen: (b) RustFS, pinned `rustfs/rustfs:1.0.1@sha256:1803faef…`.** It is the only candidate that is Apache-2.0,
+single-process, validates signatures and expiry, runs on the same port with a one-line healthcheck, and needs no
+bootstrap beyond creating a bucket. Bucket init no longer needs MinIO's `mc`: a one-shot `amazon/aws-cli:2.27.0`
+(pinned by digest, Apache-2.0, on Docker Hub) runs `s3api create-bucket`; new buckets are private by default and the
+result is checked below. The compose services are renamed `minio`→`storage`, `minio-init`→`storage-init`, volume
+`minio_data`→`storage_data`, so nothing claims to be MinIO any more.
+**Risks stated plainly.** RustFS is young (1.0.1 was published the same day this was chosen; preview builds were
+shipping the day before), so it may regress or change behaviour; the digest pin means that only happens when we
+choose to bump it. It is a test/dev dependency, not a security boundary. SeaweedFS is the fallback if RustFS proves
+unstable (it passed with no flakes), and the S3 client code is unchanged, so swapping again is a compose-only change.
+**Behaviour differences found.** (1) `ServerSideEncryption=AES256` is rejected by RustFS too (needs
+`RUSTFS_SSE_S3_MASTER_KEY`), so the "we pass no SSE params" rule in `storage.py` still holds; its docstring named
+MinIO and is reworded. (2) The tampered-signature status is 400 on RustFS vs 403 on MinIO/SeaweedFS; no test or code
+depends on that code. (3) Container user is uid 10001; verified a fresh named volume is writable.
+**Production (R2).** Unaffected: no application code path changed except a docstring/comment; R2 is selected purely by
+`STORAGE_ENDPOINT`/keys/`STORAGE_REGION=auto`. What this does *not* tell us: RustFS passing says nothing extra about R2
+compatibility (same limitation as with MinIO), and encryption-at-rest is still an R2 platform property.
+**Guardrails touched:** #4 (private bucket, pre-signed only — re-verified on the new server: anonymous GET 403),
+#2 (compose keeps `${STORAGE_*:-minioadmin}` dev defaults; no secret added). CLAUDE.md #4 wording "MinIO for local
+dev" updated to name RustFS; the guardrail itself is unchanged.
+**Verification (committed config, clean state).** New compose project `glv-clean-verify` (fresh `mongo_data` and
+`storage_data` volumes, host ports remapped via an override file because the existing `geolegalvault` stack holds
+9000/27017/8545), `docker compose up -d mongo storage storage-init` — the services CI starts: mongo and storage
+healthy in <1 s after start (~7 s including container creation), `storage-init` exited 0, a second run of it (bucket
+already present) exited 0, anonymous GET of an object 403 / valid pre-signed 200 / tampered 400 / expired 403. Then in a
+`.env`-less checkout of the commit, in CI order: `ruff check app tests` clean; `pip-audit -r requirements.txt --no-deps`
+"No known vulnerabilities found"; `pytest` with the CI env vars: **211 passed, 93.80 % coverage on Python 3.13 and
+211 passed, 93.26 % on Python 3.11 (the runner's version)**. During candidate evaluation the first full RustFS run was
+210/211: `test_other_requests_stay_prompt_while_a_half_sent_upload_hangs` measured 5.1 s against its `< 5 s` limit; it
+passes in isolation against RustFS and MinIO alike and is dominated by `/health` probing 127.0.0.1:8545 where this
+machine has a silent placeholder container (2 s probe timeout) — a timing-margin issue in that test, not a storage
+difference, and it did not recur in the two full runs above.
+**Not verified:** a GitHub Actions run (nothing pushed); the `docker compose` default project name
+`geolegalvault` on the runner (CI's container-name waits assume the checkout directory is named `geolegalvault`
+case-insensitively, as before this change); Docker Hub anonymous pull rate limits on shared runners (3 images:
+mongo, rustfs, aws-cli).

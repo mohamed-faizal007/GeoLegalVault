@@ -11,7 +11,7 @@ _TIMEOUT_SEC = 2.0
 
 
 async def check_storage(endpoint: str) -> bool:
-    """True if the S3-compatible endpoint (MinIO/R2) responds at all.
+    """True if the S3-compatible endpoint (RustFS/R2) responds at all.
 
     Any HTTP response (even 403/404 from an unauthenticated request) means
     the server is up; only connection failures count as unreachable.

@@ -7,14 +7,14 @@ Test at the layer where a bug is cheapest to catch, per Plan Part 20:
 | Layer | Tool | What it covers |
 |---|---|---|
 | Unit | pytest | Hashing correctness, geofence point-in-polygon, RBAC map, lifecycle transitions, security primitives |
-| Integration | pytest + httpx + real local Mongo/MinIO/Hardhat | Upload→store→hash→metadata, approve→anchor (real local chain), verify VERIFIED/MISMATCH/NOT_ANCHORED, amendment immutability, archival |
+| Integration | pytest + httpx + real local Mongo/RustFS/Hardhat | Upload→store→hash→metadata, approve→anchor (real local chain), verify VERIFIED/MISMATCH/NOT_ANCHORED, amendment immutability, archival |
 | API | httpx (async client against the real ASGI app) | Every endpoint × every role (authz matrix), security edge cases |
 | Contract | Hardhat/Mocha | `anchor`, re-anchor revert, `onlyWriter`, `getAnchor`, owner-only `setWriter` |
 | Frontend | Vitest + React Testing Library | Login form validation, upload dropzone validation, verify-result rendering (green/red) |
 
-Deliberately **not** mocked: MongoDB, MinIO/R2, and (in `tests/integration/test_anchor.py`
+Deliberately **not** mocked: MongoDB, RustFS/R2, and (in `tests/integration/test_anchor.py`
 and the workflow/verify integration tests) the blockchain itself — CI spins up a real
-local Hardhat node and a real docker-compose Mongo/MinIO, and tests talk to real services
+local Hardhat node and a real docker-compose Mongo/RustFS, and tests talk to real services
 over the network rather than to mocks of them. This is a deliberate choice: the riskiest
 parts of this system (the 3-way hash comparison, the anchor/confirm/promote sequence) are
 exactly the parts a mock would be most likely to over-simplify.

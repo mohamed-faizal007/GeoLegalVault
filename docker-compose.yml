@@ -12,40 +12,44 @@ services:
       timeout: 5s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
+  # S3-compatible object store for local dev and CI (R2 in production).
+  # MinIO's images were withdrawn from Docker Hub/quay.io, so this is RustFS
+  # (Apache-2.0) — see DECISIONS.md D-034. Pinned by tag AND digest: no :latest.
+  storage:
+    image: rustfs/rustfs:1.0.1@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command: ["/data"]
     ports:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY:-minioadmin}
+      RUSTFS_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-minioadmin}
+      RUSTFS_SECRET_KEY: ${STORAGE_SECRET_KEY:-minioadmin}
     volumes:
-      - minio_data:/data
+      - storage_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   # One-shot: creates the dev bucket so the backend has somewhere to write
-  # (storage.py, Phase 4).
-  minio-init:
-    image: minio/mc:latest
+  # (storage.py, Phase 4). Plain AWS CLI instead of MinIO's `mc`; buckets are
+  # private by default (Guardrail #4) and nothing here sets an ACL or policy.
+  storage-init:
+    image: amazon/aws-cli:2.27.0@sha256:e3e329e1d2894b7b4bbb0aacacd0a155262159b2e7a3b4275eb1f24046d3e06c
     depends_on:
-      minio:
+      storage:
         condition: service_healthy
     environment:
-      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-minioadmin}
-      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-minioadmin}
+      AWS_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${STORAGE_SECRET_KEY:-minioadmin}
+      AWS_DEFAULT_REGION: us-east-1
       STORAGE_BUCKET: ${STORAGE_BUCKET:-geolegalvault-dev}
     entrypoint: >
       sh -c "
-      mc alias set local http://minio:9000 $$STORAGE_ACCESS_KEY $$STORAGE_SECRET_KEY &&
-      mc mb --ignore-existing local/$$STORAGE_BUCKET &&
-      mc anonymous set none local/$$STORAGE_BUCKET
+      aws --endpoint-url http://storage:9000 s3api head-bucket --bucket $$STORAGE_BUCKET 2>/dev/null ||
+      aws --endpoint-url http://storage:9000 s3api create-bucket --bucket $$STORAGE_BUCKET
       "
 
   # Still a placeholder (kept only so /health has something at 8545 to
@@ -71,12 +75,12 @@ services:
       # Override host-oriented values from .env: inside the compose network,
       # the backend must reach sibling containers by service name, not localhost.
       MONGODB_URI: mongodb://mongo:27017
-      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ENDPOINT: http://storage:9000
       CHAIN_RPC_URL: http://hardhat-node:8545
     depends_on:
       mongo:
         condition: service_healthy
-      minio:
+      storage:
         condition: service_healthy
       hardhat-node:
         condition: service_started
@@ -85,4 +89,4 @@ services:
 
 volumes:
   mongo_data:
-  minio_data:
+  storage_data:

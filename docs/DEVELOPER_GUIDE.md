@@ -21,7 +21,7 @@ geolegalvault/
 ├── contracts/           Hardhat project — DocumentAnchor.sol, tests, deploy script
 ├── scripts/              seed.py, backup.sh, faucet_check.py, anchor_smoke_test.py
 ├── docs/                  this file and its siblings (SRS, API, DB, threat model, …)
-├── docker-compose.yml    mongo + minio(+init) + hardhat-node(placeholder) + backend
+├── docker-compose.yml    mongo + storage(+init: RustFS) + hardhat-node(placeholder) + backend
 └── .env.example          single source of truth for every env var
 ```
 
@@ -32,7 +32,7 @@ Prerequisites: Docker + Docker Compose, Python 3.11+, Node.js 20+.
 ```bash
 cp .env.example .env
 cp frontend/.env.example frontend/.env
-docker compose up -d          # mongo + minio + backend
+docker compose up -d          # mongo + storage + backend
 curl http://localhost:8000/api/v1/health
 ```
 
@@ -49,7 +49,7 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-MinIO console: http://localhost:9001 (login = `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY`
+RustFS console: http://localhost:9001 (login = `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY`
 from `.env`, default `minioadmin`/`minioadmin`).
 
 ### Exercising the blockchain locally

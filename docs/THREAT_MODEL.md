@@ -48,7 +48,7 @@ Format: **Threat → Impact → Likelihood → Mitigation → Residual risk.**
 ## Cross-cutting controls
 
 TLS in transit (platform-terminated on Vercel/Render); encryption at rest is a storage-
-platform property (R2 encrypts by default; local MinIO does not — see `services/storage.py`
+platform property (R2 encrypts by default; local RustFS does not — see `services/storage.py`
 docstring for why SSE parameters aren't set explicitly); Argon2id for all passwords; input
 validation via Pydantic at every API boundary; the enforcement pipeline
 **TLS → JWT → RBAC → geofence → input/file validation → action → audit** runs, in that

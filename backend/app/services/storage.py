@@ -1,19 +1,20 @@
 """Object storage via boto3 against an S3-compatible endpoint — Cloudflare
-R2 in production, MinIO for local dev (Guardrail #4).
+R2 in production, RustFS for local dev and CI (Guardrail #4).
 
 Bucket is private; the ONLY way bytes leave this service is a short-lived
 pre-signed GET URL — the API never proxies file bytes itself. Pre-signed
 URLs are signed with STORAGE_PUBLIC_ENDPOINT rather than STORAGE_ENDPOINT:
-in docker-compose the backend reaches MinIO as `minio:9000`, but that
+in docker-compose the backend reaches the store as `storage:9000`, but that
 hostname means nothing to the browser/client that actually fetches the
 URL, which needs `localhost:9000` instead.
 
 Encryption at rest is a platform property, not a per-request parameter:
-R2 encrypts every object transparently by default, and local MinIO has no
-KMS configured (`ServerSideEncryption=AES256` on PutObject fails against a
-bare MinIO with `NotImplemented: KMS not configured` — verified against the
-docker-compose MinIO). So we don't pass SSE params here; asking for them
-would work against neither target.
+R2 encrypts every object transparently by default, and the local store has no
+KMS configured (`ServerSideEncryption=AES256` on PutObject is rejected by a
+bare RustFS with `InvalidRequest: SSE-S3 requires RUSTFS_SSE_S3_MASTER_KEY`, and
+was rejected by MinIO with `NotImplemented: KMS not configured` — each verified
+against the docker-compose store of its day, D-034). So we don't pass SSE params
+here; asking for them would work against neither target.
 """
 
 import boto3

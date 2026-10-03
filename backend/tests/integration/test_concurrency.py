@@ -1,7 +1,7 @@
 """Real concurrency tests for D-022..D-024 (REL-02 / REL-03).
 
 Every test fires genuinely concurrent requests with `asyncio.gather` over the
-ASGI client against the real Mongo, MinIO and a local Hardhat chain. The
+ASGI client against the real Mongo, RustFS and a local Hardhat chain. The
 handlers interleave at every Mongo/storage `await`, which is exactly where the
 old check-then-write code raced, so these fail on the pre-fix code (verified
 when the change was made: see DECISIONS.md D-022 outcome).

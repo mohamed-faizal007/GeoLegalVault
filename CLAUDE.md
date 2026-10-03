@@ -87,7 +87,7 @@ and documenting why.
 
 ## 4. Storage is private R2/S3-compatible, access only via short-lived pre-signed URLs
 
-Cloudflare R2 in production, MinIO for local dev. Buckets are never public. The API never
+Cloudflare R2 in production, RustFS for local dev and CI (MinIO before D-034). Buckets are never public. The API never
 proxies large file bytes through itself.
 
 **Why:** a public bucket or a proxying API both turn one misconfiguration into a mass-leak

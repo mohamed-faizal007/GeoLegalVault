@@ -1,6 +1,6 @@
 """Integration tests for the upload -> store -> hash -> metadata flow.
 
-Runs against the real local MinIO and Mongo the docker-compose stack
+Runs against the real local RustFS and Mongo the docker-compose stack
 provides (no mocking layer, matching the rest of this test suite).
 """
 

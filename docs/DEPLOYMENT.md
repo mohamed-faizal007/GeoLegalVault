@@ -2,7 +2,7 @@
 
 Target stack (Plan Part 30, ₹0 budget): frontend on **Vercel**, backend on **Render**,
 metadata on **MongoDB Atlas M0**, blobs on **Cloudflare R2**, anchoring on **Sepolia**.
-Local dev (`docker-compose up`) uses Mongo + MinIO + a Hardhat node instead — same
+Local dev (`docker-compose up`) uses Mongo + RustFS + a Hardhat node instead — same
 codebase, only environment variables differ.
 
 Follow the steps **in this exact order** — later steps depend on values produced by
@@ -66,7 +66,7 @@ Indexes are created automatically at application startup
    you `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY`.
 3. `STORAGE_ENDPOINT` and `STORAGE_PUBLIC_ENDPOINT` are both your R2 S3-API endpoint
    (`https://<account_id>.r2.cloudflarestorage.com`) — unlike local dev (where the backend
-   reaches MinIO via a Docker-internal hostname the browser can't resolve), R2 has one
+   reaches storage via a Docker-internal hostname the browser can't resolve), R2 has one
    public endpoint for both the backend and the pre-signed URLs it hands to clients.
 4. `STORAGE_REGION=auto`, `STORAGE_BUCKET=<your bucket name>`.
 
