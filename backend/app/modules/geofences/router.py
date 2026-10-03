@@ -5,20 +5,55 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.core.config import get_settings
 from app.core.db import get_db
+from app.core.errors import AppError
 from app.core.rbac import GEOFENCE_MANAGE, require
 from app.modules.audit import service as audit
 from app.modules.geofences import service
+from app.modules.geofences.bbox import first_position_outside
 from app.modules.geofences.schemas import (
     GeofenceCreate,
     GeofenceListOut,
     GeofenceOut,
     GeofenceUpdate,
+    GeoJSONPoint,
+    GeoJSONPolygon,
 )
 
 router = APIRouter(prefix="/geofences", tags=["geofences"])
 
 _require_geofence_manage = require(GEOFENCE_MANAGE)
+
+
+class GeofenceOutsideRegion(AppError):
+    status_code = 422
+
+    def __init__(self, position: list[float]):
+        super().__init__(
+            "GEOFENCE_OUTSIDE_REGION",
+            f"position [lng, lat] = {position} is outside the configured allowed region "
+            "(GEOFENCE_ALLOWED_BBOX). If you entered [lat, lng], swap each pair — GeoJSON "
+            "is [longitude, latitude].",
+        )
+
+
+def _enforce_allowed_region(
+    region: GeoJSONPolygon | None, center: GeoJSONPoint | None
+) -> None:
+    """Guardrail #9 / D-027: when a deployment box is configured, every vertex
+    (and the optional centre) must be inside it. No-op when unset."""
+    bbox = get_settings().geofence_bbox
+    if bbox is None:
+        return
+    positions: list[list[float]] = []
+    if region is not None:
+        positions.extend(p for ring in region.coordinates for p in ring)
+    if center is not None:
+        positions.append(center.coordinates)
+    outside = first_position_outside(positions, bbox)
+    if outside is not None:
+        raise GeofenceOutsideRegion(outside)
 
 
 @router.post("", response_model=GeofenceOut, status_code=status.HTTP_201_CREATED)
@@ -27,6 +62,7 @@ async def create_geofence(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
     actor: Annotated[dict, Depends(_require_geofence_manage)],
 ) -> GeofenceOut:
+    _enforce_allowed_region(payload.region, payload.center)
     created = await service.create_geofence(db, payload)
     await audit.record(
         actor_id=actor["_id"],
@@ -69,6 +105,7 @@ async def update_geofence(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
     actor: Annotated[dict, Depends(_require_geofence_manage)],
 ) -> GeofenceOut:
+    _enforce_allowed_region(payload.region, payload.center)
     try:
         updated = await service.update_geofence(db, geofence_id, payload)
     except service.GeofenceNotFound as exc:

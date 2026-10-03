@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useState, type FormEvent } from "react";
 
 import { createGeofence, listGeofences, updateGeofence, type GeofenceOut } from "../../api/geofences";
+import { describeRing } from "../../lib/geoPreview";
 import ErrorBanner from "../ErrorBanner";
 import Spinner from "../Spinner";
 
@@ -49,6 +50,57 @@ function formatRing(ring: number[][]): string {
   return `[\n${ring.map((p) => `  [${p[0]}, ${p[1]}]`).join(",\n")}\n]`;
 }
 
+function summaryOf(ringText: string) {
+  try {
+    return describeRing(parseRing(ringText));
+  } catch {
+    return null; // unparseable: the submit handler surfaces the real error
+  }
+}
+
+/** Live readout of where the ring lands, plus a required "I checked" tick (Guardrail #9,
+ * D-027). Advisory only: it helps a person notice a swapped [lat, lng] ring (a ring typed as
+ * lat-first usually shows up in the wrong hemisphere or the Arctic), but it cannot prove the
+ * location is right and the server does not rely on it. */
+function RingPreview({
+  ringText,
+  confirmed,
+  onConfirmedChange,
+  required,
+}: {
+  ringText: string;
+  confirmed: boolean;
+  onConfirmedChange: (value: boolean) => void;
+  required: boolean;
+}) {
+  const summary = summaryOf(ringText);
+  if (!summary) return null;
+  return (
+    <div className="space-y-2 rounded border border-white/10 p-3 text-xs text-muted" role="status">
+      <p>
+        Approximate centre: <span className="font-mono text-ink">{summary.centre}</span>
+        <br />
+        Extent: <span className="font-mono text-ink">{summary.extent}</span>
+      </p>
+      <p>
+        Check this is where the geofence should be. If it is not, the pairs may be latitude-first;
+        GeoJSON is [longitude, latitude]. This preview is a visual aid only and cannot confirm the
+        location is correct.
+      </p>
+      {required && (
+        <label className="flex items-center gap-2 text-ink">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(e) => onConfirmedChange(e.target.checked)}
+          />
+          I have checked that this is the intended location
+        </label>
+      )}
+    </div>
+  );
+}
+
 /** Inline editor for name / region (PATCH /geofences/{id}), mirroring
  * UserEditForm's inline-in-table pattern for users. */
 function GeofenceEditForm({
@@ -60,7 +112,10 @@ function GeofenceEditForm({
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(fence.name);
-  const [ringText, setRingText] = useState(formatRing(fence.region.coordinates[0] ?? []));
+  const originalRing = formatRing(fence.region.coordinates[0] ?? []);
+  const [ringText, setRingText] = useState(originalRing);
+  const [confirmed, setConfirmed] = useState(false);
+  const ringChanged = ringText !== originalRing;
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -95,14 +150,29 @@ function GeofenceEditForm({
         <textarea
           aria-label="Polygon ring"
           value={ringText}
-          onChange={(e) => setRingText(e.target.value)}
+          onChange={(e) => {
+            setRingText(e.target.value);
+            setConfirmed(false);
+          }}
           rows={6}
           className="input font-mono text-xs"
         />
       </div>
+      {ringChanged && (
+        <RingPreview
+          ringText={ringText}
+          confirmed={confirmed}
+          onConfirmedChange={setConfirmed}
+          required
+        />
+      )}
       {mutation.error && <ErrorBanner error={mutation.error} />}
       <div className="flex gap-2">
-        <button type="submit" disabled={mutation.isPending} className="btn-primary btn-sm">
+        <button
+          type="submit"
+          disabled={mutation.isPending || (ringChanged && summaryOf(ringText) !== null && !confirmed)}
+          className="btn-primary btn-sm"
+        >
           {mutation.isPending ? "Saving…" : "Save changes"}
         </button>
         <button type="button" onClick={onDone} className="btn-secondary btn-sm">
@@ -123,6 +193,7 @@ export default function GeofenceManagementPanel() {
 
   const [name, setName] = useState("");
   const [ringText, setRingText] = useState(EXAMPLE_RING);
+  const [confirmed, setConfirmed] = useState(false);
 
   const createMutation = useMutation({
     mutationFn: () => {
@@ -132,6 +203,7 @@ export default function GeofenceManagementPanel() {
     onSuccess: () => {
       setName("");
       setRingText(EXAMPLE_RING);
+      setConfirmed(false);
       queryClient.invalidateQueries({ queryKey: ["admin", "geofences"] });
     },
   });
@@ -164,14 +236,28 @@ export default function GeofenceManagementPanel() {
             automatically if you omit the repeated first point)
           </p>
           <textarea
+            aria-label="New polygon ring"
             value={ringText}
-            onChange={(e) => setRingText(e.target.value)}
+            onChange={(e) => {
+              setRingText(e.target.value);
+              setConfirmed(false);
+            }}
             rows={6}
             className="input font-mono text-xs"
           />
         </div>
+        <RingPreview
+          ringText={ringText}
+          confirmed={confirmed}
+          onConfirmedChange={setConfirmed}
+          required
+        />
         {createMutation.error && <ErrorBanner error={createMutation.error} />}
-        <button type="submit" disabled={createMutation.isPending} className="btn-primary">
+        <button
+          type="submit"
+          disabled={createMutation.isPending || (summaryOf(ringText) !== null && !confirmed)}
+          className="btn-primary"
+        >
           {createMutation.isPending ? "Creating…" : "Create geofence"}
         </button>
       </form>

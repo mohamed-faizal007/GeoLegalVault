@@ -287,7 +287,7 @@ STOP at the PHASE 2 DoD checklist.
 ```
 Implement PHASE 3 (Geofences) per Plan Parts 10 and 11. Do ONLY this phase. Obey GUARDRAIL #5 (server-side only) and #9 (GeoJSON is [lng,lat]).
 
-geofences collection: {_id, name, region(GeoJSON Polygon), radius_m?, center(GeoJSON Point)?, active, created_at}. Create a 2dsphere index on region (and on center if used). Validate on input: valid GeoJSON, closed polygon ring, plausible coordinate ranges (lng -180..180, lat -90..90), vertex cap (e.g. <=100), reject swapped lat/lng via range check.
+geofences collection: {_id, name, region(GeoJSON Polygon), radius_m?, center(GeoJSON Point)?, active, created_at}. Create a 2dsphere index on region (and on center if used). Validate on input: valid GeoJSON, closed polygon ring, plausible coordinate ranges (lng -180..180, lat -90..90), vertex cap (e.g. <=100), reject swapped lat/lng via range check. *(Note 2026-10-04: range checks catch a swap only when the real longitude exceeds ±90°; see DECISIONS.md D-027.)*
 
 Admin-only endpoints (require geofence:manage): POST /geofences, GET /geofences, GET /geofences/{id}, PATCH /geofences/{id} (edit/deactivate). Do not hard-delete a fence in use; deactivate.
 
@@ -300,7 +300,7 @@ Never trust any client-provided "inside/allowed" value; always run the DB query.
 
 Add a reusable FastAPI dependency require_geofence(permission_context) that reads {lat,lng,accuracy,timestamp} from the request (body/header) and calls check_location. This dependency will guard upload/download/approve/amend in later phases.
 
-Tests (use a known polygon): point clearly inside -> pass; clearly outside -> 403; on-edge -> deterministic result; accuracy 500m -> 422; stale timestamp -> 422; swapped lat/lng input -> validation error.
+Tests (use a known polygon): point clearly inside -> pass; clearly outside -> 403; on-edge -> deterministic result; accuracy 500m -> 422; stale timestamp -> 422; swapped lat/lng input -> validation error. *(Note 2026-10-04: range checks catch a swap only when the real longitude exceeds ±90°; see DECISIONS.md D-027.)*
 
 STOP at the PHASE 3 DoD checklist.
 ```
@@ -309,7 +309,7 @@ STOP at the PHASE 3 DoD checklist.
 - [ ] Geofence CRUD works; 2dsphere index exists (`db.geofences.getIndexes()`).
 - [ ] `$geoIntersects` point-in-polygon returns correct inside/outside/edge results.
 - [ ] Accuracy > max → 422; stale timestamp → 422; outside → 403 (all fail-closed).
-- [ ] Coordinate order/range validated; swapped lat/lng rejected.
+- [ ] Coordinate order/range validated; swapped lat/lng rejected. *(Note 2026-10-04: range checks catch a swap only when the real longitude exceeds ±90°; see DECISIONS.md D-027.)*
 - [ ] `require_geofence` dependency is reusable and server-side only.
 - [ ] Tests pass.
 

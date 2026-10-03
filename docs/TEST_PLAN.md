@@ -48,7 +48,7 @@ protection is a manual GitHub repo setting — see `DEPLOYMENT.md`'s manual step
 | Approver == uploader | 403 `MAKER_CHECKER_VIOLATION` | `tests/integration/test_workflow.py` |
 | Point inside / outside / on-edge of a geofence | pass / 403 / deterministic | `tests/unit/test_geofence.py` |
 | Low GPS accuracy / stale timestamp | 422 | `tests/unit/test_geofence.py` |
-| Swapped lat/lng input | validation error | `tests/unit/test_geofence.py` |
+| Swapped lat/lng input | validation error | `tests/unit/test_geofence.py` *(Note 2026-10-04: range checks catch a swap only when the real longitude exceeds ±90°; see DECISIONS.md D-027.)* |
 | Valid upload | 201, hash + V1 DRAFT | `tests/integration/test_upload.py` |
 | Oversized file | 413 | `tests/integration/test_upload.py` |
 | MIME/magic-byte mismatch | 422 | `tests/integration/test_upload.py` |

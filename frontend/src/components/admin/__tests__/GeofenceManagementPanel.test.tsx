@@ -7,6 +7,7 @@ import GeofenceManagementPanel from "../GeofenceManagementPanel";
 
 const listGeofencesMock = vi.fn();
 const updateGeofenceMock = vi.fn();
+const createGeofenceMock = vi.fn();
 
 vi.mock("../../../api/geofences", async () => {
   const actual =
@@ -15,6 +16,7 @@ vi.mock("../../../api/geofences", async () => {
     ...actual,
     listGeofences: (...a: unknown[]) => listGeofencesMock(...a),
     updateGeofence: (...a: unknown[]) => updateGeofenceMock(...a),
+    createGeofence: (...a: unknown[]) => createGeofenceMock(...a),
   };
 });
 
@@ -81,5 +83,37 @@ describe("GeofenceManagementPanel editing", () => {
     await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(screen.queryByLabelText("Geofence name")).not.toBeInTheDocument();
     expect(updateGeofenceMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("GeofenceManagementPanel location preview (D-027)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("shows where the ring lands and blocks create until the admin ticks the confirmation", async () => {
+    createGeofenceMock.mockResolvedValue(fence);
+    renderPanel();
+
+    await userEvent.type(await screen.findByPlaceholderText("Name"), "HQ");
+    expect(screen.getByRole("status")).toHaveTextContent("11.6700°N 78.1500°E");
+    const create = screen.getByRole("button", { name: /create geofence/i });
+    expect(create).toBeDisabled();
+
+    await userEvent.click(screen.getByLabelText(/checked that this is the intended location/i));
+    expect(create).toBeEnabled();
+    await userEvent.click(create);
+    expect(createGeofenceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes a latitude-first ring visibly land elsewhere, and re-requires confirmation after an edit", async () => {
+    renderPanel();
+    const ring = await screen.findByLabelText("New polygon ring");
+    await userEvent.click(screen.getByLabelText(/checked that this is the intended location/i));
+
+    await userEvent.clear(ring);
+    // Same square typed latitude-first: valid numbers, but it is the Arctic, not Salem.
+    await userEvent.paste("[[11.66,78.14],[11.66,78.16],[11.68,78.16],[11.68,78.14]]");
+    expect(screen.getByRole("status")).toHaveTextContent("78.1500°N 11.6700°E");
+    expect(screen.getByLabelText(/checked that this is the intended location/i)).not.toBeChecked();
+    expect(screen.getByRole("button", { name: /create geofence/i })).toBeDisabled();
   });
 });

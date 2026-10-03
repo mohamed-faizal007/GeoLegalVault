@@ -11,6 +11,8 @@ from pathlib import Path
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.modules.geofences.bbox import BBox, parse_bbox
+
 PLACEHOLDER_VALUES = {"change_me", "0xCHANGE_ME", ""}
 
 # Absolute path to the repo-root .env — not a bare ".env", which resolves
@@ -70,6 +72,9 @@ class Settings(BaseSettings):
     # --- Geofence ---
     GEO_ACCURACY_MAX_M: int = 100
     GEO_FRESHNESS_MAX_SEC: int = 60
+    # Optional "minLng,minLat,maxLng,maxLat" every geofence vertex must fall
+    # inside (Guardrail #9, D-027). Empty = not enforced.
+    GEOFENCE_ALLOWED_BBOX: str = ""
 
     # --- Observability ---
     SENTRY_DSN: str = ""
@@ -85,6 +90,15 @@ class Settings(BaseSettings):
     # client address), so the global limiter would otherwise trip mid-run
     # against unrelated tests. Real deployments (dev and prod) leave this on.
     RATE_LIMIT_ENABLED: bool = True
+
+    @property
+    def geofence_bbox(self) -> BBox | None:
+        return parse_bbox(self.GEOFENCE_ALLOWED_BBOX)
+
+    @model_validator(mode="after")
+    def _validate_geofence_bbox(self) -> "Settings":
+        parse_bbox(self.GEOFENCE_ALLOWED_BBOX)  # fail fast on a malformed box
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -47,7 +47,7 @@ already has `replaced_by` set means theft — the whole `family` is revoked).
 |---|---|---|
 | `_id` | ObjectId | |
 | `name` | string | |
-| `region` | GeoJSON Polygon | `[lng, lat]` order; validated closed ring, ≤ `MAX_POLYGON_VERTICES`, coordinate-range checked (catches an accidental lat/lng swap) |
+| `region` | GeoJSON Polygon | `[lng, lat]` order; validated closed ring, ≤ `MAX_POLYGON_VERTICES`, coordinate-range checked (a swapped lat/lng is rejected only when the real longitude is beyond ±90°; optional `GEOFENCE_ALLOWED_BBOX` catches more, not all — DECISIONS.md D-027) |
 | `center`, `radius_m` | GeoJSON Point, float \| null | optional alternate representation |
 | `active` | bool | deactivate, never hard-delete a fence in use |
 | `created_at` | datetime | |

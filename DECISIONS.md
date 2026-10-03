@@ -493,6 +493,44 @@ download + verify (VERIFIED) still work.** Chosen: (c).
 data; no production write path is added), #11.
 **Not doing:** any migration or backfill.
 
+## 2026-10-03 — Step 2: guardrails #9 and #5
+
+### D-027 — Guardrail #9 (swapped `[lat, lng]`): what range checks can and cannot catch
+**What is true today.** `_validate_position` checks lng ∈ [-180, 180] and lat ∈ [-90, 90]. A swapped pair
+`[lat, lng]` is read as `lng' = lat, lat' = lng`. That fails the range check **only when the real longitude
+has |lng| > 90** (e.g. the US, most of Asia-Pacific). When |real lng| ≤ 90 the swapped pair is a perfectly
+valid coordinate and **cannot be detected from the numbers alone** — this includes the seeded demo region
+(HQ ≈ 78.2°E, 11.7°N → swapped is 11.7°E, 78.2°N, a valid point in the Arctic) and all of Europe/Africa/India.
+Existing wording in `schemas.py` ("so an accidental lat/lng swap … is rejected") overstates this and is
+corrected as part of this change.
+**Alternatives**
+1. *Optional configured bounding box* (`GEOFENCE_ALLOWED_BBOX=minLng,minLat,maxLng,maxLat`): every polygon
+   vertex (and `center`) must lie inside it, on create and update, server-side. Catches a swap iff the
+   transposed vertices fall outside the box — true for any region whose box does not overlap its own
+   transpose (India box 68–98°E × 6–36°N: swapped points have lng ≈ 11, outside → rejected). **Misses** a swap
+   when every transposed vertex also lies in the box (box ⊇ its transpose, or the fence sits near the lat = lng
+   diagonal), and every *non*-swap error that stays inside the box (wrong city, typo). Off by default, because
+   the deployment region is unknown; protects nothing until configured.
+2. *Admin preview / confirmation*: the Geofences form shows a live readout of what the ring means
+   (centroid as `11.71°N 78.21°E`, bounding extent) and requires a confirm tick before save. Works for every
+   case a human would recognise (centroid in the Arctic), but is **advisory and UI-only**: a direct API caller
+   skips it, and a tired admin may tick through it. No map library needed (text readout only).
+3. *Reject by centroid outside an expected region*: strictly weaker than (1) (checks one point, not every
+   vertex) and needs the same configuration. Not chosen separately.
+4. *Ring orientation heuristic* (a reflection across y = x flips winding): unreliable — GeoJSON producers
+   disagree on winding and valid CW polygons would be rejected. Not chosen.
+5. *Nothing beyond range checks, fix the wording only.*
+**Decision:** (1) + (2). (1) is the only server-side enforcement that can catch an in-range swap and is cheap;
+(2) covers the unconfigured case with a human check and is explicitly labelled advisory. At startup, when
+`APP_ENV != development` and no bbox is set, log a warning (not a failure: the region is a deployment choice).
+Invalid bbox config (wrong count, min ≥ max, out-of-range) fails settings load — same class of bug as #9.
+Violation → `422 GEOFENCE_OUTSIDE_REGION` listing the first offending vertex.
+**Claim policy:** nothing says a swap is "caught" without the qualifier. Tests pin both sides: caught (|lng| > 90
+without any bbox; India swap with a bbox) and **not caught** (India swap without a bbox → accepted; a
+diagonal fence with a box covering its transpose → accepted), so the limit is documented in the suite.
+**Guardrails touched:** #9 (strengthened, wording corrected), #6 (no overstated claims), #11 (tests with change).
+**Not doing:** a map widget, reverse geocoding, server-enforced confirmation tokens, orientation checks.
+
 ## 2026-10-04 — Step 2 follow-ups
 
 ### D-029 — Amendment race: the next version number comes from the validated document, not a fresh read

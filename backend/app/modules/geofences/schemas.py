@@ -1,8 +1,11 @@
 """geofences module Pydantic schemas.
 
-GeoJSON is always [longitude, latitude] order (Guardrail #9) — this is
-validated here via plausible-range checks so an accidental lat/lng swap that
-puts a value outside its valid range is rejected at the API boundary.
+GeoJSON is always [longitude, latitude] order (Guardrail #9). Range checks
+here reject a swapped pair only when the real longitude has |lng| > 90 (the
+swapped value then falls outside [-90, 90]); a swap with |lng| <= 90 is a valid
+coordinate and is NOT detectable by range. The optional GEOFENCE_ALLOWED_BBOX
+check (bbox.py, enforced in the router) covers more, but not every, case — see
+DECISIONS.md D-027.
 """
 
 from datetime import datetime

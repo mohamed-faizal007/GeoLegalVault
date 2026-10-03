@@ -986,7 +986,7 @@ Examples: `{"lvl":"WARN","event":"GEOFENCE_DENIED","actor":"u_07","point":[78.9,
 | 29 | Audit query by non-auditor | 403 |
 | 30 | Contract address wrong/misconfigured | anchor fails fast; health check flags; config validated at boot |
 | 31 | Very large geofence polygon | vertex cap on create; reject malformed ring |
-| 32 | GeoJSON lat/lng swapped | input validation catches implausible coords |
+| 32 | GeoJSON lat/lng swapped | input validation catches implausible coords *(Note 2026-10-04: range checks catch a swap only when the real longitude exceeds ±90°; see DECISIONS.md D-027.)* |
 | 33 | Testnet reset wipes anchors | local records + tx hashes retained; re-anchor path documented |
 
 ---

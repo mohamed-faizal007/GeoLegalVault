@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -27,6 +28,11 @@ init_sentry()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if settings.APP_ENV != "development" and settings.geofence_bbox is None:
+        logging.getLogger(__name__).warning(
+            "GEOFENCE_ALLOWED_BBOX is not set: a swapped [lat, lng] geofence whose "
+            "longitude is within +/-90 cannot be detected (Guardrail #9, D-027)"
+        )
     await ensure_indexes()
     yield
     await close_client()
