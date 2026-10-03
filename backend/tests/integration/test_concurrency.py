@@ -174,6 +174,55 @@ async def test_concurrent_double_submit_is_one_transition_and_one_audit_row(clie
     assert (await _audit_actions(db, ObjectId(document_id))).count("SUBMIT") == 1
 
 
+async def test_submit_rolls_back_when_a_newer_version_lands_between_read_and_claim(
+    client, db, monkeypatch
+):
+    """D-032: simulate the interleaving deterministically — a correction upload
+    inserts V2 right after submit wins its claim. Submit must not mark the stale V1
+    SUBMITTED; it undoes the claim and reports a conflict."""
+    from app.modules.documents import service as documents_service
+    from app.modules.documents import workflow
+
+    uploader, _reviewer, _approver = await _setup_three_roles(client, db)
+    upload = await _upload(client, uploader)
+    document_id = upload["document_id"]
+    await db["documents"].update_one(
+        {"_id": ObjectId(document_id)},
+        {"$set": {"review_feedback": {"comment": "fix", "reviewer_id": ObjectId()}}},
+    )
+
+    real_claim = workflow._claim
+
+    async def claim_then_interleave(db_, document, expected, new):
+        claimed = await real_claim(db_, document, expected, new)
+        await documents_service.create_next_version(
+            db_,
+            document=document,
+            actor_id=document["owner_id"],
+            data=PDF_BYTES + b"-newer",
+            content_type="application/pdf",
+        )
+        return claimed
+
+    monkeypatch.setattr(workflow, "_claim", claim_then_interleave)
+
+    resp = await client.post(f"/api/v1/documents/{document_id}/submit", headers=_auth(uploader))
+    assert resp.status_code == 409, resp.text
+
+    monkeypatch.setattr(workflow, "_claim", real_claim)
+    row = await db["documents"].find_one({"_id": ObjectId(document_id)})
+    assert row["status"] == "DRAFT"  # claim rolled back
+    versions = await _get_versions(client, uploader, document_id)
+    assert [(v["version_no"], v["status"]) for v in versions] == [(1, "DRAFT"), (2, "DRAFT")]
+    assert "SUBMIT" not in await _audit_actions(db, ObjectId(document_id))
+
+    # The user retries and submits the newer version, which is the one authorised.
+    retry = await client.post(f"/api/v1/documents/{document_id}/submit", headers=_auth(uploader))
+    assert retry.status_code == 200, retry.text
+    versions = await _get_versions(client, uploader, document_id)
+    assert [(v["version_no"], v["status"]) for v in versions] == [(1, "DRAFT"), (2, "SUBMITTED")]
+
+
 # --- amendment uploads (REL-03) ---------------------------------------------
 
 

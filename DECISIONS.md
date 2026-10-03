@@ -519,3 +519,20 @@ requests competing for the *same* version number; this one competes for differen
 concurrency tests, looped).
 **Not doing:** a counter field, transactions, or any change to retry/replay semantics beyond the above.
 
+### D-032 — `submit()` verifies the version it authorised is still the latest after it wins the claim
+**Problem (reported in D-029):** `submit` reads the latest version (to check the caller is its uploader), *then*
+claims `DRAFT → SUBMITTED`. In the correction case a new DRAFT upload can land in between, so the document is
+SUBMITTED while the version actually marked SUBMITTED (and authorised) is the older one.
+**Alternatives:** (a) *fold the version id into the claim filter* — the claim is on the document row, which does not
+carry the latest version id, so this needs a new field (rejected as in D-029 alt. 3); (b) *claim first, then read the
+version* — the uploader check would run after the state change, so a failing check must roll back anyway;
+(c) **claim, then re-read the latest version; if it is not the version that was authorised, roll the claim back
+(`SUBMITTED → DRAFT`, winner only) and raise `409 ILLEGAL_TRANSITION`** — nothing else (version status, feedback,
+audit) is written before the check, so the rollback restores the exact prior state; (d) a transaction (needs a
+replica set; see D-029).
+**Decision:** (c). The user retries and then submits the newer version, authorised against its own uploader.
+**Residual, stated:** the check narrows the window to the gap between the re-read and the version-status write;
+the mirror case (an in-flight upload that validated DRAFT before the claim and inserts after it) is bounded by the
+same version-number index but not eliminated without multi-document atomicity. Not claimed closed.
+**Guardrails touched:** #7 (no version content touched), #11 (deterministic test in the same change).
+

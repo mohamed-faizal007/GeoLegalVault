@@ -122,6 +122,17 @@ async def submit(
 
     document_id = document["_id"]
     await _claim(db, document, DocumentStatus.DRAFT, DocumentStatus.SUBMITTED)
+    # D-032: the uploader check above was made on a version read *before* the claim. If a
+    # newer DRAFT landed in between, undo the claim (nothing else has been written yet)
+    # rather than marking the stale version SUBMITTED.
+    latest = await versions_service.get_latest_version(db, document_id)
+    if latest is None or latest["_id"] != version["_id"]:
+        await documents_service.claim_status(
+            db, document_id, expected=DocumentStatus.SUBMITTED, new=DocumentStatus.DRAFT
+        )
+        raise IllegalTransition(
+            "a newer version was uploaded while submitting; reload and submit the latest version"
+        )
     await versions_service.update_status(db, version["_id"], VersionStatus.SUBMITTED)
     # A resubmission starts a fresh review; the previous comment no longer applies.
     await documents_service.set_review_feedback(db, document_id, comment=None)
