@@ -120,6 +120,36 @@ async def test_verify_tampered_stored_hash_still_mismatches_onchain(client, db, 
     assert document["integrity_flag"] == "TAMPERED"
 
 
+async def test_legacy_format_storage_key_still_downloads_and_verifies(client, db, local_chain):  # noqa: F811
+    """Rows written before D-024 point at `docs/{id}/v{n}` (no hash suffix). Both the
+    download and verify paths must use the stored key, never rebuild it."""
+    import httpx
+
+    approver, document_id, version_id, new_key = await _activate_document(client, db)
+
+    legacy_key = f"docs/{document_id}/v1"
+    assert legacy_key != new_key
+    storage.put_object(PDF_BYTES, legacy_key, "application/pdf")
+    storage.delete_object(new_key)  # only the legacy object remains
+    await db["document_versions"].update_one(
+        {"_id": ObjectId(version_id)}, {"$set": {"storage_key": legacy_key}}
+    )
+
+    download = await client.get(
+        f"/api/v1/documents/{document_id}/download", headers={**_auth(approver), **_geo()}
+    )
+    assert download.status_code == 200, download.text
+    async with httpx.AsyncClient() as raw_client:
+        fetched = await raw_client.get(download.json()["url"])
+    assert fetched.status_code == 200
+    assert fetched.content == PDF_BYTES
+
+    resp = await client.post(f"/api/v1/verify/{version_id}", headers=_auth(approver))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["result"] == "VERIFIED"
+    assert (await _get_document(client, approver, document_id))["integrity_flag"] != "TAMPERED"
+
+
 async def test_verify_never_anchored_version_is_not_anchored(client, db):
     from app.modules.users.models import Role
 

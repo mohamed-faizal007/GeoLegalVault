@@ -477,6 +477,22 @@ cross-process guarantee rests on MongoDB's atomic `findOneAndUpdate` and unique 
 multi-worker test. Legacy anchor rows have no `live` field (outside the unique index, by design). Versions
 already corrupted by the old race remain corrupted and cannot be cleared (they correctly fail verification).
 
+## 2026-10-03 — Step 1: legacy storage keys (follow-up to D-024)
+
+### D-026 — Old-format keys keep working; pinned by a test, no code change
+**Question:** after D-024 changed new keys to `docs/{id}/v{n}-{sha256}`, do versions stored under the old
+`docs/{id}/v{n}` key still download and verify?
+**Finding:** yes by construction. Download (`documents/router.py:222`) and verify (`verify/service.py:111`) both
+read `version["storage_key"]` from the stored row; `build_version_key` is only called when writing a new object.
+No code path derives a key from `(document_id, version_no)` for an existing version.
+**Alternatives:** (a) assume it from the code reading — no regression guard; (b) migrate old objects/rows to the
+new format — touches immutable `document_versions.storage_key` (Guardrail #7) for no benefit; (c) **add a test
+that stores an object under the legacy key, points the row at it, removes the new-format object, and asserts
+download + verify (VERIFIED) still work.** Chosen: (c).
+**Guardrails touched:** #7 (the test rewrites `storage_key` directly in Mongo, test-only, to simulate pre-D-024
+data; no production write path is added), #11.
+**Not doing:** any migration or backfill.
+
 ## 2026-10-04 — Step 2 follow-ups
 
 ### D-029 — Amendment race: the next version number comes from the validated document, not a fresh read
