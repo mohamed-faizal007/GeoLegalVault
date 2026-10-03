@@ -531,6 +531,45 @@ diagonal fence with a box covering its transpose → accepted), so the limit is 
 **Guardrails touched:** #9 (strengthened, wording corrected), #6 (no overstated claims), #11 (tests with change).
 **Not doing:** a map widget, reverse geocoding, server-enforced confirmation tokens, orientation checks.
 
+### D-028 — Guardrail #5: size limit before the body is read; auth before the multipart body is parsed
+**What is true today.** FastAPI parses the request body (`request.form()` / `request.json()`) *before* it
+resolves dependencies, so `POST /documents` buffered/spooled the whole multipart body before JWT, RBAC or
+geofence ran; the 10 MB check happened only after `await file.read()`. An unauthenticated client could make the
+server read an arbitrarily large body (no cap anywhere). Also the geofence dependency falls back to
+`request.form()` when the location headers are absent (runs after JWT/RBAC, before the geofence decision).
+**Alternatives**
+1. *ASGI size-cap middleware only*: bounds memory/disk, but an unauthenticated client can still make us read up
+   to the cap on every request.
+2. *Middleware + restructure the upload route* so JWT → RBAC → geofence dependencies run first and the
+   multipart body is parsed manually afterwards (`await request.form()` inside the handler; no `File()/Form()`
+   parameters; `openapi_extra` keeps the documented request schema). Unauthenticated callers never cause the
+   body to be read.
+3. *Rely on a reverse proxy* (nginx `client_max_body_size`, Cloudflare): deployment-dependent and not in the
+   repo; keep as defence in depth, not as the control.
+4. *Stream straight to storage*: the SHA-256 and MIME sniff need the bytes; this is the REL-05 redesign. Out of
+   scope.
+**Decision:** (2). A pure-ASGI middleware (outermost) enforces a per-route cap:
+`POST /api/v1/documents` → `MAX_UPLOAD_MB` MiB + 1 MiB multipart overhead; every other request →
+`MAX_JSON_BODY_KB` (default 1024). (i) `Content-Length` present and over the cap → `413 PAYLOAD_TOO_LARGE`
+before any read; non-numeric → 400. (ii) Otherwise bytes are counted as `receive()` delivers them; on crossing
+the cap the middleware sends the 413 itself, tells the app the client disconnected (so FastAPI stops reading),
+and swallows everything the app emits afterwards. This covers chunked bodies and a `Content-Length` that
+understates the body. The existing exact-size check (`FILE_TOO_LARGE`, 413, file > `MAX_UPLOAD_MB`) stays.
+**Residuals, stated honestly**
+- Size rejection happens *before* auth (a 413 reveals nothing and is the point of rejecting early); an
+  unauthenticated oversized request gets 413, an unauthenticated in-limit one gets 401 without its body read.
+- JSON routes (≤ 1 MiB) are still parsed by FastAPI before their dependencies run; bounded, and login needs its
+  body before auth by definition. Only the multipart upload route is reordered.
+- The geofence form fallback still parses the (capped) multipart body after JWT/RBAC; it only triggers when the
+  location headers are missing.
+- A real HTTP server (h11/httptools) already stops at `Content-Length` bytes, so an understated length is
+  mostly an ASGI-level concern (other servers/transports, direct ASGI callers); chunked/no-length bodies are the
+  realistic path. Tests exercise the ASGI layer; one manual check against real uvicorn is recorded in the outcome.
+- Slow-body (slowloris) is not addressed here (server/proxy timeouts).
+- `JSONLoggingMiddleware` sits inside the cap and may log the aborted request with the app's view of it.
+**Guardrails touched:** #5 (pipeline order made true for uploads), #2/#4 unchanged, #11 (tests with the change).
+**Not doing:** streaming uploads to storage, per-IP byte budgets, changing the 10 MB product limit.
+
 ## 2026-10-04 — Step 2 follow-ups
 
 ### D-029 — Amendment race: the next version number comes from the validated document, not a fresh read
@@ -589,4 +628,14 @@ replica set; see D-029).
 the mirror case (an in-flight upload that validated DRAFT before the claim and inserts after it) is bounded by the
 same version-number index but not eliminated without multi-document atomicity. Not claimed closed.
 **Guardrails touched:** #7 (no version content touched), #11 (deterministic test in the same change).
+
+### D-031 — Accepted residual limits of D-028 (owner decision, 2026-10-04)
+Accepted as-is: (1) JSON routes are parsed by FastAPI before their dependencies run, bounded by
+`MAX_JSON_BODY_KB`; (2) `JSONLoggingMiddleware` records an aborted oversized request as 400 instead of 413;
+(3) slow-body (slowloris-style) attacks are not handled in the app. (3) is recorded as a deployment-layer item
+under OPS-01 in `PRODUCTION_READINESS.md` (server/proxy read timeouts, to be set when the deployment is
+specified and written to `docs/DEPLOYMENT.md`).
+Doc notes: one-line dated notes pointing to D-027 were added where `GeoLegalVault_Project_Plan.md` (row 32),
+`IMPLEMENTATION_PROMPT.md` (lines 290, 303, 312) and `TEST_PLAN.md` (row for swapped input) say range checks catch
+swapped coordinates; no text was rewritten.
 

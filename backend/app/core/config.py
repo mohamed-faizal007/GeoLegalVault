@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     STORAGE_SECRET_KEY: str = "change_me"
     STORAGE_PRESIGN_TTL_SEC: int = 60
     MAX_UPLOAD_MB: int = 10
+    # Cap for every request body other than the document upload (D-028).
+    MAX_JSON_BODY_KB: int = 1024
 
     # --- Blockchain ---
     SEPOLIA_RPC_URL: str = "https://eth-sepolia.g.alchemy.com/v2/CHANGE_ME"

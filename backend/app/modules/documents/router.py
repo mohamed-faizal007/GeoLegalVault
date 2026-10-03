@@ -6,18 +6,17 @@ from typing import Annotated
 from fastapi import (
     APIRouter,
     Depends,
-    File,
-    Form,
     HTTPException,
     Query,
     Request,
-    UploadFile,
     status,
 )
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from starlette.datastructures import UploadFile  # request.form() yields Starlette's class
 
 from app.core.config import get_settings
 from app.core.db import get_db
+from app.core.errors import AppError
 from app.core.rbac import (
     APPROVE_PERFORM,
     DOCUMENT_AMEND,
@@ -72,24 +71,75 @@ async def _get_document_or_404(db: AsyncIOMotorDatabase, document_id: str) -> di
     return doc
 
 
-@router.post("", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
+_UPLOAD_FORM_OPENAPI = {
+    "requestBody": {
+        "required": True,
+        "content": {
+            "multipart/form-data": {
+                "schema": {
+                    "type": "object",
+                    "required": ["file", "title", "doc_type", "classification"],
+                    "properties": {
+                        "file": {"type": "string", "format": "binary"},
+                        "title": {"type": "string"},
+                        "doc_type": {"type": "string"},
+                        "classification": {"type": "string"},
+                        "tags": {"type": "string", "default": ""},
+                        "amend_of": {"type": "string", "nullable": True},
+                    },
+                }
+            }
+        },
+    }
+}
+
+
+class MissingFormField(AppError):
+    status_code = 422
+
+    def __init__(self, name: str):
+        super().__init__("VALIDATION_ERROR", f"multipart field {name!r} is required")
+
+
+def _form_text(form, name: str, *, required: bool = True) -> str:
+    value = form.get(name)
+    if isinstance(value, str):
+        return value
+    if required:
+        raise MissingFormField(name)
+    return ""
+
+
+@router.post(
+    "",
+    response_model=UploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    openapi_extra=_UPLOAD_FORM_OPENAPI,
+)
 async def upload_document(
     request: Request,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
     user: Annotated[dict, Depends(_require_upload)],
     _fence: Annotated[dict, Depends(_require_upload_geofence)],
-    file: Annotated[UploadFile, File()],
-    title: Annotated[str, Form()],
-    doc_type: Annotated[str, Form()],
-    classification: Annotated[str, Form()],
-    tags: Annotated[str, Form()] = "",
-    amend_of: Annotated[str | None, Form()] = None,
 ) -> UploadResponse:
-    data = await file.read()
+    # Guardrail #5 / D-028: JWT, RBAC and geofence (the dependencies above) have
+    # all run before this line. The multipart body is parsed only now, so an
+    # unauthenticated or unauthorised caller never causes it to be read. The
+    # size cap itself is enforced upstream by BodyLimitMiddleware.
+    form = await request.form()
+    file = form.get("file")
+    if not isinstance(file, UploadFile):
+        raise MissingFormField("file")
+    title = _form_text(form, "title")
+    doc_type = _form_text(form, "doc_type")
+    classification = _form_text(form, "classification")
+    tags = _form_text(form, "tags", required=False)
+    amend_of = _form_text(form, "amend_of", required=False) or None
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
     content_type = file.content_type or "application/octet-stream"
 
     try:
+        data = await file.read()
         if amend_of:
             if not has_permission(user["role"], DOCUMENT_AMEND):
                 raise RBACError("FORBIDDEN", f"Missing required permission: {DOCUMENT_AMEND}")
@@ -128,7 +178,7 @@ async def upload_document(
                 content_type=content_type,
             )
     finally:
-        await file.close()
+        await form.close()  # also removes any spooled temp file
 
     if result.get("replayed"):
         # Identical retry of an upload that was already accepted (D-024): same

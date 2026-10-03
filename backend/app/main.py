@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.body_limit import BodyLimitMiddleware
 from app.core.config import get_settings
 from app.core.db import close_client, ensure_indexes, ping_mongo
 from app.core.errors import register_exception_handlers
@@ -41,6 +42,9 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="GeoLegalVault API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(JSONLoggingMiddleware)
+# Size cap (Guardrail #5): wraps the logger and the app so nothing reads the body past
+# the limit, but sits inside CORS/security headers so a 413 still carries them.
+app.add_middleware(BodyLimitMiddleware)
 if settings.RATE_LIMIT_ENABLED:
     app.add_middleware(RateLimitMiddleware, requests_per_min=settings.RATE_LIMIT_PER_MIN)
 app.add_middleware(SecurityHeadersMiddleware, hsts=settings.APP_ENV != "development")
