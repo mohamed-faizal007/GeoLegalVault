@@ -307,6 +307,87 @@ async def test_concurrent_identical_amendment_upload_is_idempotent(
     assert uploads == 1
 
 
+async def test_stale_amendment_request_never_becomes_a_second_version(
+    client, db, local_chain  # noqa: F811
+):
+    """Deterministic form of the race behind D-029: a request that validated
+    AMENDMENT_REQUESTED on a stale document row must not build V(n+2) on top of
+    the version an identical/competing request already created."""
+    from app.modules.documents import service as documents_service
+
+    ctx = await _active_document_with_amendment_requested(client, db)
+    document_id = ctx["document_id"]
+    stale_document = await db["documents"].find_one({"_id": ObjectId(document_id)})
+    assert stale_document["status"] == "AMENDMENT_REQUESTED"
+    data = PDF_BYTES + b"-winner"
+
+    winner = await _post_amend_upload(client, ctx["uploader"], document_id, data)
+    assert winner.status_code == 201, winner.text
+    uploader_id = (await _get_versions(client, ctx["approver"], document_id))[1]["uploaded_by"]
+
+    # Same bytes, same uploader, stale row -> replay of the winner, no V3.
+    replay = await documents_service.create_next_version(
+        db,
+        document=stale_document,
+        actor_id=ObjectId(uploader_id),
+        data=data,
+        content_type="application/pdf",
+    )
+    assert replay["replayed"] is True
+    assert str(replay["version"]["_id"]) == winner.json()["version_id"]
+
+    # Different bytes on the same stale row -> conflict, no V3 either.
+    with pytest.raises(documents_service.VersionConflict):
+        await documents_service.create_next_version(
+            db,
+            document=stale_document,
+            actor_id=ObjectId(uploader_id),
+            data=PDF_BYTES + b"-someone-else",
+            content_type="application/pdf",
+        )
+    versions = await _get_versions(client, ctx["approver"], document_id)
+    assert [v["version_no"] for v in versions] == [1, 2]
+
+
+async def test_identical_reupload_in_the_correction_case_is_a_replay_not_a_new_draft(client, db):
+    from app.modules.documents import service as documents_service
+
+    uploader, _reviewer, _approver = await _setup_three_roles(client, db)
+    upload = await _upload(client, uploader)
+    document_id = upload["document_id"]
+    # DRAFT with changes requested (what a review leaves behind).
+    await db["documents"].update_one(
+        {"_id": ObjectId(document_id)},
+        {"$set": {"review_feedback": {"comment": "fix", "reviewer_id": ObjectId()}}},
+    )
+    document = await db["documents"].find_one({"_id": ObjectId(document_id)})
+    owner = document["owner_id"]
+    corrected = PDF_BYTES + b"-corrected"
+
+    first = await documents_service.create_next_version(
+        db, document=document, actor_id=owner, data=corrected, content_type="application/pdf"
+    )
+    assert first["version"]["version_no"] == 2 and not first.get("replayed")
+
+    again = await documents_service.create_next_version(
+        db, document=document, actor_id=owner, data=corrected, content_type="application/pdf"
+    )
+    assert again["replayed"] is True
+    assert again["version"]["_id"] == first["version"]["_id"]
+    count = await db["document_versions"].count_documents({"document_id": ObjectId(document_id)})
+    assert count == 2
+
+    # A genuinely different correction is still a new version.
+    third = await documents_service.create_next_version(
+        db,
+        document=document,
+        actor_id=owner,
+        data=PDF_BYTES + b"-corrected-again",
+        content_type="application/pdf",
+    )
+    assert third["version"]["version_no"] == 3
+
+
 async def test_storage_key_is_content_addressed_so_different_bytes_never_collide():
     doc = str(ObjectId())
     h1 = hashlib.sha256(b"one").hexdigest()

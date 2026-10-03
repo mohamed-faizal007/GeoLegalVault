@@ -476,3 +476,46 @@ under `asyncio.gather` because every handler yields at its Mongo/storage awaits.
 cross-process guarantee rests on MongoDB's atomic `findOneAndUpdate` and unique indexes, not on a
 multi-worker test. Legacy anchor rows have no `live` field (outside the unique index, by design). Versions
 already corrupted by the old race remain corrupted and cannot be cleared (they correctly fail verification).
+
+## 2026-10-04 — Step 2 follow-ups
+
+### D-029 — Amendment race: the next version number comes from the validated document, not a fresh read
+**Found by** the full backend suite: `test_concurrent_identical_amendment_upload_is_idempotent` fails
+deterministically at the D-024 commit when run alone (6/6) and intermittently in the full run. Cause: the
+router validates `status == AMENDMENT_REQUESTED` on the row it read, then `create_next_version` *re-reads* the
+latest version to pick `next_version_no`. If an identical request finished in between, the late one sees V2 as
+latest and creates V3 (same bytes, 201) — two versions from one double-click. D-024's idempotency only covers two
+requests competing for the *same* version number; this one competes for different ones.
+**Alternatives**
+1. *Router passes the version number it validated* (the starting proposal). Right idea, but the router's own
+   "latest version" read is a second read after the status read, so it has the same gap; the base must come from
+   the same row that proves the status.
+2. *Claim-first*: CAS `AMENDMENT_REQUESTED → DRAFT` before inserting. Serialises writers, but a double-click's
+   second request then loses the claim while the first is still inserting, so it gets 409, not the idempotent
+   replay D-024 promises; and the correction case (DRAFT → DRAFT) has no status change to claim.
+3. *A per-document `latest_version_no` counter with CAS*: correct, but adds a new mutable field to existing
+   documents (backfill/migration) for one race.
+4. *Mongo multi-document transaction*: needs a replica set; docker-compose and the documented deployments run a
+   standalone `mongo:7`.
+5. **Chosen: derive the base from the document row the status check was made on.** In `AMENDMENT_REQUESTED` the
+   base is the document's live version (`current_version_id`) — by construction nothing newer exists yet — so
+   `next_version_no = base + 1` is fixed by the validated state and never re-read. A stale request then collides
+   on the `(document_id, version_no)` unique index and the existing D-024 handling decides: same bytes + same
+   uploader → replay (201, one version); otherwise `409 VERSION_CONFLICT`. In the correction case
+   (`DRAFT` with `review_feedback`) the base is the latest version (that state can legitimately take several
+   successive uploads) and, additionally, an upload identical (sha256 + uploader) to a DRAFT latest version is
+   treated as a replay, since nothing distinguishes it from a double-click and a second identical DRAFT is useless.
+**Other routes with check-status-then-reread (audit of `workflow.py`)**
+- `review`, `approve`: read the latest version before the claim, but in `SUBMITTED` / `PENDING_APPROVAL` no upload
+  can be validated, so the latest version cannot change — except for a stale in-flight upload, which the fix
+  above stops at the version-number index. Not changed.
+- `submit`: reads the latest version (to check its uploader) *before* claiming `DRAFT → SUBMITTED`. In the
+  correction case an upload can insert a newer DRAFT in that window, so `submit` could mark the older version
+  SUBMITTED while a newer DRAFT exists. Narrow (needs a correction upload racing a submit by the same people),
+  not covered by the amendment fix, **reported, not fixed here**; options when picked up: re-read the latest
+  version after the claim and roll the claim back on mismatch, or fold the version id into the claim filter.
+- `request_amendment`, `archive`, `clear_integrity_flag`: claim/CAS only; no second read that feeds a write.
+**Guardrails touched:** #7 (versions still insert-only), #11 (deterministic regression test + the existing
+concurrency tests, looped).
+**Not doing:** a counter field, transactions, or any change to retry/replay semantics beyond the above.
+

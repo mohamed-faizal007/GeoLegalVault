@@ -23,6 +23,7 @@ from app.core.errors import AppError
 from app.modules.documents.models import DOCUMENTS_COLLECTION, DocumentStatus
 from app.modules.documents.schemas import DocumentOut, ReviewFeedbackOut
 from app.modules.versions import service as versions_service
+from app.modules.versions.models import VersionStatus
 from app.services import storage
 from app.services.hashing import sha256_bytes
 
@@ -375,6 +376,24 @@ async def set_integrity_flag(
     )
 
 
+async def _base_version_for_next(
+    db: AsyncIOMotorDatabase, document: dict[str, Any]
+) -> dict[str, Any] | None:
+    """The version V(n+1) is built on, taken from the state the caller validated
+    rather than from a fresh "latest" read (D-029). While AMENDMENT_REQUESTED the
+    only version is the live one, so its number is fixed by the document row; a
+    request that raced past an identical one then collides on the unique
+    (document_id, version_no) index instead of silently becoming V(n+2). In the
+    correction case (DRAFT) successive uploads are legitimate, so the latest is used."""
+    if document["status"] == DocumentStatus.AMENDMENT_REQUESTED.value and document.get(
+        "current_version_id"
+    ):
+        live = await versions_service.get_version_by_id(db, str(document["current_version_id"]))
+        if live is not None:
+            return live
+    return await versions_service.get_latest_version(db, document["_id"])
+
+
 async def create_next_version(
     db: AsyncIOMotorDatabase,
     *,
@@ -390,13 +409,21 @@ async def create_next_version(
     V(n+1) is itself approved and anchored."""
     validate_upload(data, content_type)
 
-    current_version = await versions_service.get_latest_version(db, document["_id"])
+    document_id = document["_id"]
+    sha256 = sha256_bytes(data)
+    current_version = await _base_version_for_next(db, document)
     if current_version is None:
         raise DocumentNotFound("document has no version to amend")
-
-    document_id = document["_id"]
+    if (
+        document["status"] == DocumentStatus.DRAFT.value
+        and current_version["status"] == VersionStatus.DRAFT.value
+        and current_version["sha256"] == sha256
+        and current_version["uploaded_by"] == actor_id
+    ):
+        # Correction case: an identical re-upload of the DRAFT we already hold is a
+        # double-click, not a new version (D-029).
+        return {"document": document, "version": current_version, "replayed": True}
     next_version_no = current_version["version_no"] + 1
-    sha256 = sha256_bytes(data)
     # Content-addressed (D-024): concurrent uploaders of *different* bytes get
     # different keys, so neither can overwrite the other's object.
     storage_key = storage.build_version_key(str(document_id), next_version_no, sha256)
