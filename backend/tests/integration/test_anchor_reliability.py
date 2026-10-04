@@ -89,6 +89,15 @@ async def _doc(db, ctx) -> dict:
     return await db["documents"].find_one({"_id": ObjectId(ctx["document_id"])})
 
 
+async def _schedule(db, ctx, *, in_seconds: float) -> None:
+    """Move the document's next attempt, so a test says what it means (due now, or not for a
+    minute) instead of racing the wall clock against a 50 ms backoff, which a slow machine loses."""
+    when = naive(datetime.now(UTC)) + timedelta(seconds=in_seconds)
+    await db["documents"].update_one(
+        {"_id": ObjectId(ctx["document_id"])}, {"$set": {"anchor_retry.next_attempt_at": when}}
+    )
+
+
 async def _is_active(db, ctx) -> bool:
     return (await _doc(db, ctx))["status"] == "ACTIVE"
 
@@ -219,15 +228,17 @@ async def test_transient_failures_back_off_then_succeed_without_leaking_secrets(
         await _approve(client, ctx)
         assert calls["n"] == 1
 
-        await asyncio.sleep(0.1)
+        await _schedule(db, ctx, in_seconds=-1)  # due
         await run_pass(db)
         first = (await _doc(db, ctx))["anchor_retry"]
         assert first["attempts"] == 1 and first["last_error"] == "RPC_UNREACHABLE"
+
         before = calls["n"]
-        await run_pass(db)  # immediately again: still inside the backoff window
+        await _schedule(db, ctx, in_seconds=60)  # not due: the worker must leave it alone
+        await run_pass(db)
         assert calls["n"] == before, "retried before next_attempt_at"
 
-        await asyncio.sleep(0.12)
+        await _schedule(db, ctx, in_seconds=-1)  # due again
         await run_pass(db)
         second = (await _doc(db, ctx))["anchor_retry"]
         assert second["attempts"] == 2

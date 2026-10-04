@@ -1178,3 +1178,26 @@ contrast.
   **inconclusive**; no claim is made from it.
 - **Cost:** under heavy load this test can take minutes, because each baseline probe may wait up to 60 s. It only waits that
   long when the machine is that slow.
+
+### D-046 — Two timing failures found by the full-suite run after D-045 (one mine, fixed; one older, characterised and left)
+The full suite after D-045 ran 12 minutes (a loaded machine; earlier full runs took about 3) and failed two tests.
+**1. `test_transient_failures_back_off_then_succeed_without_leaking_secrets` (mine, fixed).** It asserted that a worker pass
+run *immediately* after a failed attempt does not retry "because it is inside the backoff window". In the fast test settings
+that window is 50 ms, and on a slow machine the next pass legitimately arrived after it, so the worker was right and the test
+was wrong. This is the fragile kind of assertion ("nothing may happen within a short real-time window"). Fixed by saying what
+is meant instead of racing the clock: the test sets `next_attempt_at` explicitly (60 s ahead: the worker must leave it alone;
+then in the past: it must act). The backoff growth is still asserted, from the stored `last_attempt_at` / `next_attempt_at`
+(computed at failure time, not wall-clock dependent). Passes 3 of 3. The other reliability tests only wait *at least* a short
+time before asserting something happens, or assert something never happens over a long span, so a slow machine cannot break
+them in this way.
+**2. `test_concurrent_identical_amendment_upload_is_idempotent` (older, D-024/D-029; not changed).** Fails on some runs with
+one or two of the three "concurrent" uploads answered `409 ILLEGAL_TRANSITION` ("current status: DRAFT"): the late request
+arrives after the winner has already finished and moved the document to DRAFT, so the three requests were not overlapping.
+The test needs genuine overlap, which scheduling does not guarantee. **Is it caused by REL-01? Not shown, and a matched
+comparison says no.** Failure counts: baseline `4fec3f8` run from a temporary worktree 0 of 52; HEAD run from the repo
+directory 6 of 37 (3/12, 2/20, 1/5); but HEAD run from a temporary worktree **0 of 20**, in a run interleaved with the
+baseline's 0 of 20. With both trees run from the same kind of location, only the code differs, and the result is 0 and 0. What
+correlated with failure was running from the main checkout on this machine, for a reason I did not isolate (candidates not
+tested: scanning of the repo directory, different file-system caching, other processes in the session). It is left unchanged:
+making it deterministic would change what it tests (D-029 already has a deterministic form,
+`test_stale_amendment_request_never_becomes_a_second_version`), and the choice belongs to the owner.
