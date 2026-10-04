@@ -805,3 +805,17 @@ and the one-byte-over test. No application code touched.
 - `test_upload.py` `MZ…` as `application/x-msdownload`: rejected as unsupported type before libmagic.
 **Verification, stated plainly.** The runner's libmagic cannot be reproduced locally, so a local pass proves only that
 the new filler is accepted by the bundled libmagic. **CI is the real verification** and has not yet run on this fix.
+
+### D-036 — Pin CI runners to `ubuntu-24.04` instead of `ubuntu-latest`
+**Problem.** `ubuntu-latest` is scheduled to move to Ubuntu 26 on 2026-10-19. The runner image supplies `libmagic1`
+(the CI MIME_MISMATCH in D-035 was a libmagic version difference), Docker, and the toolchain, so a silent image
+change can alter MIME detection or compose behaviour with no commit on our side to blame.
+**Alternatives**
+1. **Pin all three jobs to `ubuntu-24.04`** (chosen): the image stays fixed until we choose to move.
+2. Keep `ubuntu-latest` and fix breakage as it appears. Rejected: the failure would arrive on an unrelated commit.
+3. Pin to `ubuntu-22.04`. Rejected: older than needed, nearer to end of life.
+**Change.** `.github/workflows/ci.yml`: `runs-on: ubuntu-latest` → `ubuntu-24.04` in all three jobs (`backend`, `contracts`, `frontend`).
+No application code touched.
+**Cost / follow-up.** A pinned image must be bumped by hand before GitHub retires it; moving to Ubuntu 26 should be a
+deliberate change that re-runs the suite.
+**Verification.** Not verifiable locally; CI on this commit is the check, and nothing is pushed.
