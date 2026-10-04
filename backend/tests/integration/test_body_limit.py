@@ -103,6 +103,13 @@ async def _multipart_stream(file_total: int | None) -> AsyncIterator[bytes]:
         yield block
 
 
+def _text_filler(size: int) -> bytes:
+    """`size` bytes of genuine ASCII text lines, so libmagic reports text/plain on any
+    version (a single repeated byte is sniffed differently by different libmagic builds, D-035)."""
+    line = b"GeoLegalVault size-limit filler line\n"
+    return (line * (size // len(line) + 1))[:size]
+
+
 def _multipart(file_bytes: bytes, content_type: str = "text/plain") -> tuple[bytes, str]:
     parts = []
     for name, value in (
@@ -216,7 +223,7 @@ async def test_malformed_content_length_is_a_400(client):
 
 async def test_upload_exactly_at_the_file_size_limit_still_works(client, db):
     token = await _uploader_token(client, db)
-    data = b"a" * MAX_FILE
+    data = _text_filler(MAX_FILE)
     body, content_type = _multipart(data)
     assert len(body) <= UPLOAD_LIMIT  # framing fits inside the allowance
     assert len(body) - MAX_FILE < MULTIPART_OVERHEAD_BYTES
@@ -232,7 +239,7 @@ async def test_upload_exactly_at_the_file_size_limit_still_works(client, db):
 
 async def test_file_one_byte_over_the_limit_gets_file_too_large_not_a_cap_error(client, db):
     token = await _uploader_token(client, db)
-    body, content_type = _multipart(b"a" * (MAX_FILE + 1))
+    body, content_type = _multipart(_text_filler(MAX_FILE + 1))
     assert len(body) <= UPLOAD_LIMIT  # passes the byte cap; the file-size rule decides
 
     resp = await client.post(

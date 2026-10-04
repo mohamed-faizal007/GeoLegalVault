@@ -779,3 +779,29 @@ difference, and it did not recur in the two full runs above.
 `geolegalvault` on the runner (CI's container-name waits assume the checkout directory is named `geolegalvault`
 case-insensitively, as before this change); Docker Hub anonymous pull rate limits on shared runners (3 images:
 mongo, rustfs, aws-cli).
+
+### D-035 — CI MIME_MISMATCH: fix the test filler, not the MIME check
+**Problem.** CI run on def8025: `test_upload_exactly_at_the_file_size_limit_still_works` got 422 `MIME_MISMATCH`.
+The test uploaded 10 MiB of one repeated byte (`b"a" * MAX_FILE`) claiming `text/plain`; the runner's libmagic
+(apt `libmagic1` on Ubuntu) detected `application/SIMH-tape-data`, while the libmagic bundled with `python-magic-bin`
+on the dev machine calls it text. A single repeated byte is not text in any meaningful sense, so libmagic's answer on
+it is version-dependent. The product behaviour (reject content that does not match its claimed type) is correct.
+**Alternatives**
+1. **Make the filler genuine ASCII text** (chosen): repeated lines of `GeoLegalVault size-limit filler line\n`, cut to
+   exactly the wanted size. Keeps `text/plain`, the exact-boundary size and the SHA-256 assertion.
+2. A minimal real PDF header plus padding. Stable (libmagic keys on `%PDF-`) but odd for a `text/plain` test.
+3. Loosen/skip MIME validation in the test or add `SIMH-tape-data` to the accepted set. Rejected: it weakens
+   Guardrail-level validation to make a test pass.
+**Change.** Test-only: helper `_text_filler()` in `tests/integration/test_body_limit.py`, used by the exact-limit test
+and the one-byte-over test. No application code touched.
+**Fragility audit of other synthetic filler.**
+- One-byte-over test (`test_body_limit.py`): same filler, switched. It never reaches libmagic anyway: the size check
+  (`documents/service.py:101-102`) runs before `magic.from_buffer` (line 108), so it gets FILE_TOO_LARGE regardless.
+- `test_body_limit.py` streaming `b"x"` bodies and `test_body_limit_realsocket.py` `b"a"` bodies: all are aborted at the
+  byte cap, answered 401, over the file-size rule (FILE_TOO_LARGE, before libmagic), or never completed (half-sent
+  upload). None reaches libmagic; left unchanged.
+- `PDF_BYTES` (`%PDF-1.4\n…` + `A*200`) in test_upload / test_security_cases / test_workflow / test_concurrency:
+  libmagic identifies PDF from the `%PDF-` header; not expected to vary, left unchanged. Residual risk, not proven.
+- `test_upload.py` `MZ…` as `application/x-msdownload`: rejected as unsupported type before libmagic.
+**Verification, stated plainly.** The runner's libmagic cannot be reproduced locally, so a local pass proves only that
+the new filler is accepted by the bundled libmagic. **CI is the real verification** and has not yet run on this fix.
