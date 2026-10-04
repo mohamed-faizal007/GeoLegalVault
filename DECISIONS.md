@@ -1127,3 +1127,54 @@ raising a timeout).
 **Not verified:** a GitHub Actions run (nothing pushed); the banner in a real browser (the component is covered by
 jsdom tests only, so layout and the 30 s polling were not seen on screen); the admin retry end to end against a running
 worker (the API half is tested against the real backend with a mocked client on the frontend side).
+
+## 2026-10-05 — Test robustness follow-up
+
+### D-045 — `test_other_requests_stay_prompt_while_a_half_sent_upload_hangs`: measure against this machine's own baseline, not a fixed 5 s
+**Problem.** The test opens a connection that sends a valid upload header and a little body, then stalls, and asserts that
+`GET /health` plus `POST /auth/login` finish in `< 5 s` while it hangs. It now fails every time on the owner's machine:
+5.4 s in a full run, 5.7-6.3 s in three isolated runs, and **5.5-5.9 s on three of three runs at `4fec3f8`**, the commit before
+any REL-01 work, so it is not caused by that work. D-034 had already seen 5.1 s once. The stalled upload is not what is slow:
+`/health` makes two outbound HTTP probes and each one builds an SSL context (about 1 s of CPU on this machine, D-021), and
+login hashes a password, so the two requests cost a few seconds of this machine's CPU with or without any upload. The
+absolute number encodes machine speed; the test is meant to detect something else: **the server being tied up by the
+stalled upload so that other requests do not complete until it ends**.
+**Alternatives**
+- **(a) Compare with a baseline latency measured in the same test.** Run the same two requests twice before the stalled
+  connection is opened, keep the slower, and require the during-hang time to be `<= max(3 x baseline, baseline + 3 s)`.
+  The bound follows the machine and the current load, and the failure message carries both numbers.
+- **(b) A much looser absolute bound** justified by the failure mode (a block lasts as long as the stalled upload, which
+  has no read timeout here, so it is unbounded). Catches the real failure on any machine, but it hard-codes a speed
+  assumption in the other direction: too tight on a slower runner, too loose to notice partial blocking on a fast one.
+- **(c) Retry once.** Does not touch the cause: a machine that is over the limit is over it every time (3 of 3 here), so
+  this only doubles the runtime of a test that fails anyway, and teaches people to re-run and ignore it.
+- **(d) Raise the timeout.** D-021 argued against this: a longer fixed limit only hides contention and delays the report of
+  a real hang. It would also just move the number the next slow machine exceeds.
+**Recommendation and decision: (a), with (b)'s idea as its backstop.** The probe requests get a 20 s client timeout, so a
+server that is actually blocked is reported as a clear failure ("blocked by a half-sent upload") after at most 20 s instead of
+hanging, and the ratio check does the proportional work. Using the slower of two baseline runs and a `3x + 3 s` margin keeps
+a noisy neighbour from tripping it. **Stated limit:** a block shorter than that margin is not detected. That is intended: the
+guard is against the unbounded kind of block (the stalled upload holding the worker), not against small slowdowns. Test-only
+change; no application code is touched.
+**How it is checked (shown to the owner).** (1) A mutation: a synchronous 25 s sleep inserted before `await request.form()` in
+`upload_document` (standing in for a handler that blocks the worker for as long as a stalled upload would; the file is
+restored byte-for-byte, md5 verified) must make the test FAIL within a hard outer timeout. (2) The fixed test must PASS while
+the machine is loaded with CPU burners, and the old absolute-bound version of the test is run under the same load for
+contrast.
+**Outcome of D-045 (test-only change; no application code touched).**
+- **Unloaded:** the fixed test passes 3 of 3 (7.6 s, 7.9 s, and once 30.9 s when the machine happened to be busy, which the
+  ratio absorbed), and the whole `test_body_limit_realsocket.py` file passes (6 tests).
+- **Mutation, RED as required.** A synchronous sleep before `await request.form()` in `upload_document` (restored
+  byte-for-byte, md5 verified, `git status` clean afterwards), under a hard outer timeout: the test fails with
+  "other requests did not complete within 38s while a half-sent upload was open (baseline without it: 9.2s): the server is
+  blocked by the stalled upload", in about 65-80 s. A first attempt with a 25 s sleep also failed, but it exposed a
+  property worth stating: **a finite block shorter than the margin is not detected** (on a machine whose baseline is 17 s, a
+  25 s block is inside `3 x baseline`). That is the limit stated above, so the mutation uses a 600 s sleep, i.e. the unbounded
+  block the stalled upload would cause. The probe timeout also now scales with the baseline (`max(20, 3 x baseline + 10)`)
+  because the first design's fixed 20 s was tight when the baseline itself reached 17 s.
+- **Under load.** With CPU burners on 6 of the 12 logical CPUs: the **new test passes** (173 s wall, the machine being slow),
+  and the **old fixed-5 s test fails** under the same load (105 s). A first experiment that saturated all 12 CPUs was a bad
+  experiment (everything crawled: the old test took 251 s to fail and the new one hit my 300 s outer guard) and is
+  **inconclusive**; no claim is made from it.
+- **Cost:** under heavy load this test can take minutes, because each baseline probe may wait up to 60 s. It only waits that
+  long when the machine is that slow.

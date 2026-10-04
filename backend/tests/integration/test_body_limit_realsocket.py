@@ -213,26 +213,63 @@ async def test_oversized_unauthenticated_chunked_upload_is_answered_without_bein
     assert result["sent"] < total
 
 
+# D-045: the bound is relative to this machine's own speed, not a fixed number of seconds.
+# A server that is really blocked never answers while the stalled upload is open, so waiting longer
+# costs nothing but time. The wait scales with the machine (baseline), with a floor.
+BASELINE_TIMEOUT_SEC = 60
+MIN_PROBE_TIMEOUT_SEC = 20
+BLOCK_FACTOR = 3.0
+BLOCK_SLACK_SEC = 3.0
+
+
+def _probe(base: str, timeout: float) -> float:
+    """Wall time of two ordinary requests: /health and a login."""
+    started = time.monotonic()
+    health = httpx.get(f"{base}/api/v1/health", timeout=timeout)
+    login = httpx.post(
+        f"{base}/api/v1/auth/login",
+        json={"email": "uploader@example.com", "password": "Str0ngPassw0rd!"},
+        timeout=timeout,
+    )
+    assert health.status_code == 200
+    assert login.status_code == 200
+    return time.monotonic() - started
+
+
 async def test_other_requests_stay_prompt_while_a_half_sent_upload_hangs(client, db, server):
+    """A stalled upload must not tie the server up. "Prompt" is measured against the same two
+    requests with nothing hanging (D-045): a fixed 5 s bound encoded this machine's speed and
+    failed here with no upload involved. A server that IS blocked by the stalled upload never
+    answers while it is open, so it fails the ratio check or the probe timeout, on any machine."""
     headers = {**await _auth_headers(client, db), "Content-Type": MULTIPART}
     port = server["port"]
+
+    base = server["base"]
+    # slower of two: noise-tolerant (and the first one also warms the server)
+    baseline = max(_probe(base, BASELINE_TIMEOUT_SEC), _probe(base, BASELINE_TIMEOUT_SEC))
+    probe_timeout = max(MIN_PROBE_TIMEOUT_SEC, BLOCK_FACTOR * baseline + 10)
+
     hanging = socket.create_connection(("127.0.0.1", port), timeout=10)
     declared = 5 * MIB  # within the cap, so the app keeps waiting for the rest
     head = ["POST /api/v1/documents HTTP/1.1", f"Host: 127.0.0.1:{port}"]
     head.append(f"Content-Length: {declared}")
     head += [f"{k}: {v}" for k, v in headers.items()]
-    hanging.sendall(("\r\n".join(head) + "\r\n\r\n").encode() + multipart_prefix() + b"a" * 100_000)
+    hanging.sendall(
+        ("\r\n".join(head) + "\r\n\r\n").encode() + multipart_prefix() + b"a" * 100_000
+    )
     try:
-        started = time.monotonic()
-        health = httpx.get(f"{server['base']}/api/v1/health", timeout=10)
-        login = httpx.post(
-            f"{server['base']}/api/v1/auth/login",
-            json={"email": "uploader@example.com", "password": "Str0ngPassw0rd!"},
-            timeout=10,
+        try:
+            during = _probe(base, probe_timeout)
+        except httpx.TimeoutException:
+            pytest.fail(
+                f"other requests did not complete within {probe_timeout:.0f}s while a half-sent "
+                f"upload was open (baseline without it: {baseline:.1f}s): the server is blocked "
+                "by the stalled upload"
+            )
+        limit = max(BLOCK_FACTOR * baseline, baseline + BLOCK_SLACK_SEC)
+        assert during <= limit, (
+            f"other requests took {during:.1f}s while an upload was left hanging, against "
+            f"{baseline:.1f}s without it (limit {limit:.1f}s)"
         )
-        elapsed = time.monotonic() - started
-        assert health.status_code == 200
-        assert login.status_code == 200
-        assert elapsed < 5, f"other requests took {elapsed:.1f}s while an upload was left hanging"
     finally:
         hanging.close()
