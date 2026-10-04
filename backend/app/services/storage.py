@@ -19,6 +19,7 @@ here; asking for them would work against neither target.
 
 import boto3
 from botocore.client import BaseClient, Config
+from botocore.exceptions import ClientError
 
 from app.core.config import get_settings
 
@@ -78,6 +79,19 @@ def put_object(data: bytes, key: str, content_type: str) -> None:
         Body=data,
         ContentType=content_type,
     )
+
+
+def object_exists(key: str) -> bool:
+    """HEAD only (no body read). True/False only for an authoritative answer: a 404 /
+    NoSuchKey is False; any other failure (outage, auth) raises, so a caller can never
+    mistake "storage is down" for "the file is gone" (D-039)."""
+    try:
+        get_client().head_object(Bucket=get_settings().STORAGE_BUCKET, Key=key)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+            return False
+        raise
+    return True
 
 
 def delete_object(key: str) -> None:

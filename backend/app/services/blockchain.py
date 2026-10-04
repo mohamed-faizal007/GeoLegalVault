@@ -121,6 +121,18 @@ async def get_onchain_anchor(document_id: str, version: int) -> dict[str, Any]:
     }
 
 
+async def tx_known(tx_hash: str) -> bool:
+    """True if the node still knows this tx (mined or in its mempool). False only when
+    the node answers "not found"; an unreachable node raises, so "can't tell" is never
+    read as "dropped" (D-038 addendum)."""
+    w3 = get_web3()
+    try:
+        await asyncio.to_thread(w3.eth.get_transaction, tx_hash)
+    except TransactionNotFound:
+        return False
+    return True
+
+
 async def confirm_tx(tx_hash: str) -> dict[str, Any] | None:
     """None while still pending or not yet mined to ANCHOR_CONFIRMATIONS
     depth; otherwise {"block_number", "status"} (status: 1 success, 0

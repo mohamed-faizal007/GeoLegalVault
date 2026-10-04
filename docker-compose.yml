@@ -87,6 +87,39 @@ services:
     volumes:
       - ./backend/app:/app/app
 
+  # REL-01 (D-040): the one optional background worker (CLAUDE.md Guardrail #10). It confirms
+  # PENDING anchors and re-drives anchors that did not land. OPT-IN: `docker compose up` and CI
+  # do not start it. Start it with
+  #   docker compose --profile worker up -d anchor-worker
+  # CAUTION: it signs and sends real transactions with the SERVICE_WALLET_PRIVATE_KEY in .env,
+  # on whatever chain SEPOLIA_RPC_URL points at. Review `python -m app.workers.anchor_confirmer
+  # --dry-run` against your database first.
+  anchor-worker:
+    build: ./backend
+    profiles: ["worker"]
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.anchor_confirmer"]
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      STORAGE_ENDPOINT: http://storage:9000
+      CHAIN_RPC_URL: http://hardhat-node:8545
+    depends_on:
+      mongo:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+    # The image's own HEALTHCHECK curls the API, which this container does not serve.
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.workers.anchor_confirmer", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    volumes:
+      - ./backend/app:/app/app
+
 volumes:
   mongo_data:
   storage_data:

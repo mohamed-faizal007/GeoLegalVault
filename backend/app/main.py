@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.config import get_settings
-from app.core.db import close_client, ensure_indexes, ping_mongo
+from app.core.db import close_client, ensure_indexes, get_database, ping_mongo
 from app.core.errors import register_exception_handlers
 from app.core.health import check_chain, check_storage
 from app.core.logging import JSONLoggingMiddleware
@@ -22,6 +22,7 @@ from app.modules.reports.router import router as reports_router
 from app.modules.users.router import router as users_router
 from app.modules.verify.router import router as verify_router
 from app.modules.versions.router import router as versions_router
+from app.workers import heartbeat as anchor_worker_heartbeat
 
 settings = get_settings()
 init_sentry()
@@ -76,10 +77,17 @@ async def health() -> dict:
     # Hardhat node isn't implemented until Phase 5, so an unreachable chain
     # node is expected pre-Phase-5 and reported as "degraded", not an error.
     chain_ok = await check_chain(settings.CHAIN_RPC_URL)
+    # A bare ok/stale flag (this endpoint is unauthenticated). The worker is optional
+    # (Guardrail #10), so a stale one never changes the overall status (D-040).
+    try:
+        worker_ok = mongo_ok and await anchor_worker_heartbeat.is_fresh(get_database())
+    except Exception:
+        worker_ok = False
 
     return {
         "status": "ok" if mongo_ok and storage_ok else "degraded",
         "mongo": "reachable" if mongo_ok else "unreachable",
         "storage": "reachable" if storage_ok else "unreachable",
         "chain": "reachable" if chain_ok else "degraded",
+        "anchor_worker": "ok" if worker_ok else "stale",
     }

@@ -66,7 +66,8 @@ already has `replaced_by` set means theft — the whole `family` is revoked).
 | `current_version_id` | ObjectId \| null | repointed only at final activation (never mid-review) |
 | `tags` | string[] | |
 | `integrity_flag` | string \| null | set to `"TAMPERED"` by Verify on a MISMATCH; cleared only by the admin-only `POST /documents/{id}/integrity/clear`, which re-verifies every anchored version first and records `{by, at, reason}` in `integrity_cleared` |
-| `anchor_pending_alert` | bool | surfaced when anchoring exhausted its retries |
+| `anchor_pending_alert` | bool | set when an anchor attempt fails; cleared on promotion |
+| `anchor_retry` | object \| absent | REL-01 (D-037): the worker's queue state for a document stuck in APPROVED: `attempts` (failed worker attempts), `last_error` (a fixed code), `permanent` / `permanent_reason`, `queued_at` (when it became stuck; drives the auto-retry age cutoff), `next_attempt_at`, `last_attempt_at`, `lease_owner` / `lease_until` (compare-and-swap lease), `requeued_by` / `requeued_at` (admin re-queue). Removed when the anchor lands. Absent on documents stuck before REL-01; the worker initialises it on first sight |
 | `retention_until` | datetime \| null | |
 | `created_at`, `updated_at` | datetime | |
 
@@ -110,14 +111,18 @@ updates — `update_status` and `mark_confirmed_anchor` (which sets `anchored`/`
 | `block_number` | int \| null | set on confirmation |
 | `contract_address`, `network` | string | |
 | `status` | string | `PENDING \| CONFIRMED \| FAILED` |
+| `adopted` | bool \| absent | `true` on a CONFIRMED row recorded because the chain already held the hash (a tx whose row was lost); such a row has no `tx_hash` (D-037) |
 | `live` | bool \| absent | `true` on PENDING/CONFIRMED rows, `false` once FAILED; a partial unique index on `(version_id, live=true)` allows at most one live anchor per version (absent on rows from before D-023) |
-| `error` | string \| null | a fixed code (`RPC_UNREACHABLE`, `INSUFFICIENT_FUNDS`, `ALREADY_ANCHORED`, `NOT_AUTHORIZED`, `REVERTED`, `NOT_CONFIGURED`, `ANCHOR_FAILED`) — never raw exception text (D-020) |
+| `error` | string \| null | a fixed code (`RPC_UNREACHABLE`, `INSUFFICIENT_FUNDS`, `ALREADY_ANCHORED`, `NOT_AUTHORIZED`, `REVERTED`, `NOT_CONFIGURED`, `ANCHOR_FAILED`, `TX_DROPPED`, `RETRIES_EXHAUSTED`, `STORED_OBJECT_MISSING`) — never raw exception text (D-020) |
 | `created_at`, `confirmed_at` | datetime | |
 
 **Indexes:** `tx_hash` (unique, **sparse**), `version_id`. The index is sparse because a
 send that never reaches the RPC (chain unreachable) records a row with `tx_hash` **entirely
 omitted**, not set to `null` — an explicit `null` would still be indexed and a second failed
 attempt would collide on the unique constraint; omitting the key avoids that entirely.
+
+### `worker_heartbeats`
+One document, `_id: "anchor_worker"` (D-040): `last_beat_at`, `last_ok_at`, `last_error_at`, `last_error_code` (a fixed code, never a message), `passes`. Written by the optional anchor worker once per loop; read by `/health` (a bare `ok`/`stale`) and the worker's `--healthcheck`. Not a queue and not a service (Guardrail #10).
 
 ### `verification_records`
 Append-only log of every Verify click — the audit trail specific to the integrity check

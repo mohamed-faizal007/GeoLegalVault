@@ -89,7 +89,8 @@ Indexes are created automatically at application startup
 6. Deploy, then verify:
    ```bash
    curl https://<your-render-service>.onrender.com/api/v1/health
-   # {"status":"ok","mongo":"reachable","storage":"reachable","chain":"reachable"}
+   # {"status":"ok","mongo":"reachable","storage":"reachable","chain":"reachable","anchor_worker":"stale"}
+   # (anchor_worker is "stale" until the optional worker in 4a has started)
    ```
 7. Run the seed script **against this deployment's database** (from your local machine,
    with the repo-root `.env` pointed at the same `MONGODB_URI`/`STORAGE_*`/blockchain
@@ -105,6 +106,25 @@ Indexes are created automatically at application startup
    tamper demo cases. See `scripts/seed.py`'s own docstring and the warning it prints if
    fewer than 10 documents reach `ACTIVE` (almost always a sign the blockchain env vars
    above aren't wired up correctly yet).
+
+### 4a. The anchor worker (optional, recommended)
+
+Without it, an anchor that fails or is dropped leaves the document in `APPROVED` until an admin acts.
+It is the one sanctioned background worker (CLAUDE.md Guardrail #10): the **same image** as the API,
+a different command.
+
+- **Render:** add a *Background Worker* service from the same `backend/Dockerfile`, start command
+  `python -m app.workers.anchor_confirmer`, the same environment variables as the web service.
+- **docker-compose (local/VM):** `docker compose --profile worker up -d anchor-worker`. It is behind an
+  opt-in profile, so `docker compose up` and CI never start it.
+- It signs and sends real transactions with `SERVICE_WALLET_PRIVATE_KEY` on the chain `SEPOLIA_RPC_URL`
+  points at. **Before the first start against existing data, run `python -m app.workers.anchor_confirmer
+  --dry-run`** and read the plan: it prints, per APPROVED document, what the worker would do, and
+  changes nothing. Documents stuck longer than `ANCHOR_AUTO_RETRY_MAX_AGE_DAYS` (default 7) are never
+  auto-sent; they appear as *needs admin retry* (`GET /api/v1/blockchain/anchors/attention`).
+- Health: `/api/v1/health` reports `anchor_worker: ok|stale` (a stale or absent worker does not change
+  the overall `status`); the compose service has a heartbeat healthcheck
+  (`python -m app.workers.anchor_confirmer --healthcheck`).
 
 ## 5. Deploy the frontend to Vercel
 

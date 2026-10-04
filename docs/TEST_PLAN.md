@@ -83,9 +83,12 @@ protection is a manual GitHub repo setting — see `DEPLOYMENT.md`'s manual step
 - **End-to-end browser automation** (Playwright) — listed as a Level-3/optional item (Plan
   Part 26); the golden-path and tamper-detect flows are instead exercised manually per
   `DEMO_SCRIPT.md` before every demo.
-- **The optional background worker** (`app/workers/anchor_confirmer.py`) — excluded from
-  the coverage gate (`pyproject.toml`'s `[tool.coverage.run] omit`); the synchronous
-  confirm-on-approve path it duplicates is fully tested, and the plan's own cut-list names
-  this component as safe to leave untested first if time runs short.
+- **The optional background worker** (`app/workers/anchor_confirmer.py`) — no longer
+  excluded: since REL-01 (D-037..D-042) it is the recovery path for failed anchors, so it is
+  covered by `tests/integration/test_anchor_reliability.py` (real Hardhat node killed and
+  restarted, transient/permanent failures, adopt-from-chain, two workers racing in-process
+  and as two OS processes), `test_anchor_worker_ops.py` (dry-run, heartbeat, `/health`) and
+  `tests/unit/test_anchor_retry_policy.py`. What is *not* covered: a real Sepolia run, and a
+  cross-host race (the cross-process test is one machine).
 - **ClamAV / malware scanning** — not implemented (see `THREAT_MODEL.md` #7), so nothing to
   test.

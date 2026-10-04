@@ -20,6 +20,10 @@ USERS_MANAGE = "users:manage"
 GEOFENCE_MANAGE = "geofence:manage"
 AUDIT_VIEW = "audit:view"
 INTEGRITY_CLEAR = "integrity:clear"
+# REL-01 (D-041): see the stuck-anchor list; ask for an anchor to be re-driven. Re-queueing
+# is a request, never a signature: only the worker signs (Guardrail #3).
+ANCHOR_VIEW = "anchor:view"
+ANCHOR_RETRY = "anchor:retry"
 
 # --- Role -> permission map (Plan Part 3, exact) ----------------------------
 # Administrator manages the system but never the document workflow itself
@@ -36,6 +40,8 @@ ROLE_PERMISSIONS: dict[Role, frozenset[str]] = {
             AUDIT_VIEW,
             DOCUMENT_ARCHIVE,
             INTEGRITY_CLEAR,
+            ANCHOR_VIEW,
+            ANCHOR_RETRY,
         }
     ),
     Role.LEGAL_OFFICER: frozenset(
@@ -48,6 +54,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[str]] = {
             DOCUMENT_ARCHIVE,
             APPROVE_PERFORM,
             VERIFY_PERFORM,
+            ANCHOR_VIEW,
         }
     ),
     Role.REVIEWING_OFFICER: frozenset(
@@ -63,7 +70,9 @@ ROLE_PERMISSIONS: dict[Role, frozenset[str]] = {
             VERIFY_PERFORM,
         }
     ),
-    Role.AUDITOR: frozenset({DOCUMENT_VIEW, DOCUMENT_SEARCH, VERIFY_PERFORM, AUDIT_VIEW}),
+    Role.AUDITOR: frozenset(
+        {DOCUMENT_VIEW, DOCUMENT_SEARCH, VERIFY_PERFORM, AUDIT_VIEW, ANCHOR_VIEW}
+    ),
 }
 
 

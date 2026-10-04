@@ -1,6 +1,8 @@
 import pytest
 
 from app.core.rbac import (
+    ANCHOR_RETRY,
+    ANCHOR_VIEW,
     APPROVE_PERFORM,
     AUDIT_VIEW,
     DOCUMENT_AMEND,
@@ -36,6 +38,8 @@ EXPECTED_PERMISSIONS = {
         AUDIT_VIEW,
         DOCUMENT_ARCHIVE,
         INTEGRITY_CLEAR,
+        ANCHOR_VIEW,
+        ANCHOR_RETRY,
     },
     Role.LEGAL_OFFICER: {
         DOCUMENT_UPLOAD,
@@ -46,6 +50,7 @@ EXPECTED_PERMISSIONS = {
         DOCUMENT_ARCHIVE,
         APPROVE_PERFORM,
         VERIFY_PERFORM,
+        ANCHOR_VIEW,
     },
     Role.REVIEWING_OFFICER: {DOCUMENT_VIEW, DOCUMENT_SEARCH, REVIEW_PERFORM, VERIFY_PERFORM},
     Role.AUTHORIZED_STAFF: {
@@ -56,7 +61,7 @@ EXPECTED_PERMISSIONS = {
         DOCUMENT_AMEND,
         VERIFY_PERFORM,
     },
-    Role.AUDITOR: {DOCUMENT_VIEW, DOCUMENT_SEARCH, VERIFY_PERFORM, AUDIT_VIEW},
+    Role.AUDITOR: {DOCUMENT_VIEW, DOCUMENT_SEARCH, VERIFY_PERFORM, AUDIT_VIEW, ANCHOR_VIEW},
 }
 
 ALL_PERMISSIONS = {
@@ -73,6 +78,8 @@ ALL_PERMISSIONS = {
     GEOFENCE_MANAGE,
     AUDIT_VIEW,
     INTEGRITY_CLEAR,
+    ANCHOR_VIEW,
+    ANCHOR_RETRY,
 }
 
 
@@ -99,6 +106,7 @@ def test_auditor_is_read_only():
         APPROVE_PERFORM,
         USERS_MANAGE,
         GEOFENCE_MANAGE,
+        ANCHOR_RETRY,
     )
     for permission in mutating:
         assert has_permission(Role.AUDITOR.value, permission) is False

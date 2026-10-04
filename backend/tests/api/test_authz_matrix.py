@@ -9,7 +9,14 @@ maker-checker/workflow/geofence tests elsewhere).
 
 import pytest
 
-from app.core.rbac import AUDIT_VIEW, DOCUMENT_VIEW, GEOFENCE_MANAGE, USERS_MANAGE, has_permission
+from app.core.rbac import (
+    ANCHOR_VIEW,
+    AUDIT_VIEW,
+    DOCUMENT_VIEW,
+    GEOFENCE_MANAGE,
+    USERS_MANAGE,
+    has_permission,
+)
 from app.modules.users.models import Role
 from app.modules.users.schemas import UserCreate
 from app.modules.users.service import create_user
@@ -27,6 +34,7 @@ ENDPOINTS = [
     ("GET", "/api/v1/users", USERS_MANAGE),
     ("GET", "/api/v1/audit", AUDIT_VIEW),
     ("GET", "/api/v1/reports/summary", AUDIT_VIEW),
+    ("GET", "/api/v1/blockchain/anchors/attention", ANCHOR_VIEW),
 ]
 
 

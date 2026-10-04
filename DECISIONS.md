@@ -819,3 +819,256 @@ No application code touched.
 **Cost / follow-up.** A pinned image must be bumped by hand before GitHub retires it; moving to Ubuntu 26 should be a
 deliberate change that re-runs the suite.
 **Verification.** Not verifiable locally; CI on this commit is the check, and nothing is pushed.
+
+## 2026-10-04 — REL-01: anchoring must not leave documents stuck
+
+Context: PRODUCTION_READINESS.md REL-01 (R13). Backend stage first (worker, API, permissions, tests); UI and the
+CLAUDE.md notes follow as a second stage with their own decisions.
+
+### D-037 — REL-01 root cause, evidence, alternatives, and the chosen design (A: retry inside the one worker)
+**Evidence (read-only queries on the dev DB, re-run 2026-10-04).** 22 anchor rows: 19 CONFIRMED, 3 FAILED, 0 PENDING.
+The 3 FAILED rows are one approval's three in-request attempts (1 s apart, `ANCHOR_MAX_ATTEMPTS=3`) on "Approval Demo"
+v1 on 2026-08-29, error text `SEPOLIA_RPC_URL is not configured` (written before D-020, so raw text, not a code). The
+document is APPROVED with `anchor_pending_alert=true`, its version is APPROVED with no `anchor_id`, and the contract
+holds nothing for it (`getAnchor` returns `exists: false`). Re-approving returns 409. **Its stored object does not
+exist**: `head_object` returns 404 (so do 4 other versions in dev; one of those is an ACTIVE version, not part of this
+item). All 22 anchor rows lack the `live` field (D-023: legacy rows sit outside the partial unique index).
+
+**Defects in the code.**
+1. `confirm_pending_anchors` selects `status == PENDING` only: a FAILED anchor, or an APPROVED document with *no*
+   anchor row at all, is never revisited. A PENDING row whose tx was dropped is polled forever.
+2. `run_forever` has no `try/except`; `confirm_tx` raises on an RPC error mid-loop, so one outage ends the worker.
+3. The worker is not in the Dockerfile or `docker-compose.yml`.
+4. `anchor_pending_alert` is written but never read by any API or the UI.
+5. A crash between `send_raw_transaction` and the row insert leaves a mined tx with no row.
+6. (Found while designing) `promote_confirmed_anchor` claims PENDING to CONFIRMED and then performs several writes; a
+   crash in between leaves a CONFIRMED anchor under an APPROVED document, which nothing resumes.
+
+**Alternatives.** (A) retry inside the one worker with a reconcile loop and backoff **(chosen, owner-approved)**;
+(B) a scheduled/cron job calling the same function: a second deploy component with minute granularity and no
+heartbeat, i.e. a worse worker; (C) on-demand retry only: documents stay stuck until a human notices, kept only as a
+supplement (the admin re-queue, D-041); (D) longer retries inside `approve()`: blocks the HTTP request and does not
+survive a restart.
+
+**Design.**
+- **State lives on the document**: `documents.anchor_retry = {attempts, next_attempt_at, lease_owner, lease_until,
+  last_error, permanent, permanent_reason, queued_at, requeued_by, requeued_at}`. `blockchain_anchors` stays an
+  append-only log (one row per tx sent or adopted). `document_versions` is not touched (Guardrail #7).
+- **Eligible work:** a document in `APPROVED` whose latest version is `APPROVED`. The worker never moves a document
+  out of any other state.
+- **Idempotency order (every attempt, under the lease):**
+  1. *An existing anchor for this version?* Look at rows by `version_id` and **`status`** (`PENDING`/`CONFIRMED`),
+     not by `live`. That is how legacy rows are covered without a backfill: the partial unique index protects only
+     rows that carry `live: true`, but this check does not depend on it. A PENDING row is left to the confirm pass
+     (and declared `TX_DROPPED` once older than `ANCHOR_PENDING_TIMEOUT_SEC` with no receipt). A CONFIRMED row under
+     an APPROVED document means an interrupted promotion (defect 6): finish it, send nothing.
+  2. *Does the chain already hold it?* `getAnchor(document_id, version_no)`. Same hash: **adopt**. Insert a CONFIRMED
+     row (`adopted: true`, no `tx_hash`; the key is simply absent, so the sparse unique index is unaffected, and the
+     contract's event does not index `documentId`, so recovering the original tx hash would mean scanning logs) and
+     promote. A *different* hash for that pair: permanent `ALREADY_ANCHORED`, alert, audit. The contract can never
+     accept a second anchor for the pair, so retrying cannot succeed.
+  3. *Is the stored object there?* (D-039).
+  4. Only then send, via the existing `anchor_document_version`, which records a PENDING or FAILED row.
+- **Layers that stop a duplicate, strongest first:** the contract itself (`already anchored` revert; the only guard
+  that holds across processes and crashes), the Mongo lease (one worker per document at a time), the partial unique
+  index (new rows), and the status-based check in step 1 (legacy rows).
+- **Residual, stated:** a crash between send and row insert (defect 5) can at worst waste one reverted tx on the next
+  attempt (the contract rejects the duplicate); it can never produce a second anchor. The next attempt's `getAnchor`
+  adopts the mined one if it has landed.
+- **Nonce:** `_send_lock` is per process, and the API (at `approve()`) and the worker both sign with the one service
+  wallet. A cross-process nonce collision surfaces as a send error, is classified `ANCHOR_FAILED`/`RPC_UNREACHABLE`,
+  and is retried like any transient failure; the race test uses two real processes to prove it heals.
+
+**Guardrails:** #1 (only `{documentId, version, sha256, eventType}`; the hash is read from the DB version row), #3
+(D-041), #7 (no write to `document_versions`; promotion uses the existing whitelisted helpers), #10 (the one optional
+worker; no queue, no broker), #11 (tests with the change).
+
+### D-038 — Retry policy, error codes, and the lease numbers
+**New codes** (additive to `KNOWN_ERROR_CODES`, so `public_error` passes them through): `TX_DROPPED` (a PENDING tx
+that never produced a receipt within the timeout), `RETRIES_EXHAUSTED` (transient attempts used up),
+`STORED_OBJECT_MISSING` (D-039). `ALREADY_ANCHORED` is reused for "chain holds a different hash".
+**Policy by class** (the code comes from `classify_anchor_error`; stored, logged and returned values are codes only,
+per D-020):
+
+| Code | Retry | Backoff (n = failures so far) | Ends as |
+|---|---|---|---|
+| `RPC_UNREACHABLE`, `ANCHOR_FAILED`, `TX_DROPPED` | up to 8 | `min(900, 30*2^(n-1))` s: 30, 60, 120, 240, 480, 900, 900 | permanent `RETRIES_EXHAUSTED` after the 8th failure (about 45 min of trying) |
+| `INSUFFICIENT_FUNDS` | up to 8 | `min(3600, 600*2^(n-1))` s: 600, 1200, 2400, 3600, ... (about 4.4 h) | permanent `RETRIES_EXHAUSTED`; **its own alert** (the attention item shows `last_error=INSUFFICIENT_FUNDS`) so ops can fund the wallet and an admin can re-queue |
+| `REVERTED` | 2 | base schedule | permanent `REVERTED` |
+| `NOT_AUTHORIZED`, `NOT_CONFIGURED` | none | n/a | permanent immediately (retrying cannot fix a missing writer role or config) |
+| `ALREADY_ANCHORED`, different on-chain hash | none | n/a | permanent immediately |
+| `STORED_OBJECT_MISSING` | none | n/a | permanent immediately |
+
+Every number is a setting (`ANCHOR_RETRY_*`, documented in `.env.example`) so tests can shrink them to milliseconds.
+
+**Lease numbers.** `ANCHOR_PENDING_TIMEOUT_SEC = 600` (a tx with no receipt for 10 min is declared `TX_DROPPED`; a
+Sepolia block is about 12 s, so this is about 50 blocks) and `ANCHOR_LEASE_SEC = 900`. The lease is deliberately
+**longer than the confirmation timeout** (900 > 600, 300 s of margin for a slow RPC): a live holder can never be
+preempted while still inside a send-and-confirm window, and a crashed worker's document is picked up again after at
+most 15 min. A lease is taken by compare-and-swap (`find_one_and_update` on `lease_until` absent or expired), is
+released when the attempt ends, and is never extended. `anchor_pending_alert` keeps its meaning (set on failure,
+cleared on promotion).
+
+**Audit.** Individual failed attempts are not audited (each is already a `blockchain_anchors` row and a redacted log
+line). Audited: `ANCHOR_ADOPTED`, `ANCHOR_OK` (existing), `ANCHOR_PERMANENT_FAIL` (with the code),
+`ANCHOR_RETRY_REQUESTED`. The in-request attempts inside `approve()` are unchanged and are not counted in the 8; after
+they fail, `approve()` enqueues the document (`anchor_retry`) so the worker takes over.
+
+### D-039 — Pre-send check that the version's stored object exists
+**Question.** Should the worker refuse to anchor a hash whose file is not in storage? (Approval Demo's object is a
+404.) **Weighed.** An anchor is permanent and one per (document, version): anchoring a hash for a file that cannot be
+retrieved writes an immutable on-chain record that can only ever verify as an integrity failure, and it permanently
+uses up that pair. Cost of the check: one `HEAD` per attempt, no body read. Risk: a *storage outage* must not be
+mistaken for a missing file. **Decision: do it, in the worker's retry path only.** Only an authoritative
+404/NoSuchKey is permanent (`STORED_OBJECT_MISSING`); any other storage error is transient and retried under the
+normal backoff. It checks *existence*, not integrity (re-hashing needs the whole object; `verify` already does that
+after the fact). The first in-request attempt inside `approve()` is left as is: changing it would change approve
+latency and its existing tests for a case the upload path makes rare. New helper `storage.object_exists(key)`, run
+with `asyncio.to_thread` because boto3 is synchronous (REL-05).
+**Consequence for the dev data.** Approval Demo is both older than the auto-retry age cutoff (D-040) and missing its
+object, so even an admin re-queue would end as permanent `STORED_OBJECT_MISSING` rather than spending gas.
+
+### D-040 — The worker: loop, heartbeat, health, compose, auto-retry age cutoff, dry-run
+- **Loop** (`python -m app.workers.anchor_confirmer`): each pass is wrapped in `try/except Exception`; an error is
+  logged redacted, recorded in the heartbeat as a code, and the loop sleeps and continues. Per-document work is
+  isolated too, so one bad document does not stop the pass. `CancelledError` propagates for a clean stop. A pass does,
+  in order: (1) confirm PENDING anchors (also detects `TX_DROPPED`), (2) reconcile eligible APPROVED documents
+  (D-037). `--once` runs a single pass (used by the race test); `--healthcheck` exits 0/1 from heartbeat age;
+  `--dry-run` is below.
+- **Heartbeat**: one document in `worker_heartbeats` (`_id: "anchor_worker"`) updated every loop: `last_beat_at`,
+  `last_ok_at`, `last_error_code`, `passes`. Stale means no beat for `ANCHOR_WORKER_STALE_SEC` (120 s, 8 loop
+  intervals of 15 s). It is a plain collection in the same database, not a new service (#10).
+- **`/health`** gains one key, `anchor_worker: "ok" | "stale"`, a bare flag with no detail (the endpoint is
+  unauthenticated, SEC-17). It does **not** change the overall `status`: the worker is optional (#10), so a dev stack
+  without it must not read as degraded. Never having run reads as `stale`.
+- **Compose**: service `anchor-worker`, same image, command `python -m app.workers.anchor_confirmer`, healthcheck
+  `... --healthcheck`, behind the **opt-in profile `worker`**
+  (`docker compose --profile worker up -d anchor-worker`). Nothing in CI names it, and CI's
+  `docker compose up -d mongo storage storage-init` does not start profiled services.
+- **Auto-retry age cutoff** `ANCHOR_AUTO_RETRY_MAX_AGE_DAYS = 7`. The worker only *sends* for documents whose
+  `queued_at` is within the cutoff; older stuck documents are listed as `NEEDS_ADMIN_RETRY` and never auto-sent.
+  `queued_at` is set at enqueue; for documents with no `anchor_retry` (legacy or crash) it is taken from the earliest
+  anchor row for the version, else the document's `updated_at`. An admin re-queue (D-041) resets `queued_at`, which is
+  what makes it a deliberate act. **Why:** the dev DB points at public Sepolia, so a worker's first start must not
+  spend testnet gas on months-old demo rows.
+- **`--dry-run`**: no writes, no sends. It lists every document the worker would consider and, for each, the action
+  it would take (`would NOT send: needs admin retry`, `would adopt`, `would send 1 tx`, `would mark permanent
+  STORED_OBJECT_MISSING`, ...). It performs read-only checks (a `getAnchor` `eth_call` and a `HEAD`) so the plan is
+  accurate; it never builds or signs a transaction. The owner reviews that output before the worker is ever started
+  against the dev DB, and this work does not start the worker against the dev DB.
+
+### D-041 — API, permissions, the manual re-queue, and Guardrail #3
+- `GET /api/v1/blockchain/anchors/attention`: new permission **`anchor:view`** (Administrator, Legal Officer,
+  Auditor). Lists documents that are APPROVED and either flagged, in retry, permanent, awaiting confirmation too long,
+  or older than `ANCHOR_ATTENTION_GRACE_SEC` (120 s): `document_id`, `title`, `version_no`, `state`
+  (`RETRYING | AWAITING_CONFIRMATION | PERMANENT_FAILURE | NEEDS_ADMIN_RETRY`), `last_error` (a code, via
+  `public_error`), `attempts`, `next_attempt_at`, `stuck_since`, `can_retry`. No hash, key, URL or tx internals.
+- `POST /api/v1/blockchain/anchors/{document_id}/retry`: new permission **`anchor:retry`** (Administrator only).
+  Body `{reason}` (10-1000 chars, required). Pipeline in the documented order: JWT, RBAC, geofence, validation,
+  action, audit; **the admin therefore needs an assigned geofence** (new context `anchor_retry`). It **only
+  re-queues**: a compare-and-swap on a document that is APPROVED, not currently leased, and has no PENDING or
+  CONFIRMED anchor resets `anchor_retry` to `attempts=0, permanent=false, next_attempt_at=now, queued_at=now`; `409`
+  otherwise. It never contacts the chain and never signs; the worker does. The hash always comes from the DB version
+  row; nothing in the request names a hash, version, tx or address. Audit: `ANCHOR_RETRY_REQUESTED` with the reason.
+- **Guardrail #3 is not amended.** The reading recorded in CLAUDE.md: a user may *request a re-drive* of an anchor
+  the system already owes; they never sign and never choose what is anchored. Only one clarifying sentence is added
+  to #3.
+- Not doing: adding anchor state to `DocumentOut` (not required; the attention endpoint carries it); a retry for a
+  document that is not APPROVED; any bulk retry.
+
+### D-042 — Test plan (tests written first, shown failing on the current code)
+No `pytest-timeout` in the repo and none is added; each new test enforces a **hard timeout itself**
+(`asyncio.wait_for` around the body, `timeout=` on every subprocess), and Hardhat start-up uses the existing
+`HARDHAT_START_TIMEOUT_SEC` (D-021; default 90 s, the slowest observed CI cold start was 47 s) through a node-control
+fixture that polls readiness and never sleeps a fixed time. Cases, each on a real local Hardhat node:
+1. **Node killed and restarted**: approve with the node down, a worker pass while it is down (must not raise),
+   restart, the next pass anchors. And a tx that was PENDING when the node was killed (manual mining) is lost by the
+   restart, declared `TX_DROPPED`, and re-sent.
+2. **Transient RPC failure**, with an error whose text carries a fake API-keyed URL (no key may reach a row, a log
+   line or the API).
+3. **Permanent failure** (the service wallet is not a writer, so `NOT_AUTHORIZED`): no further attempts, alert,
+   attention item.
+4. **Two workers racing**, both in-process and as two real OS processes.
+
+Plus: adopt, different-hash, missing-object, legacy row without `live`, age cutoff, interrupted promotion, admin
+re-queue, RBAC matrix, heartbeat and `/health`. A "fails without the fix" run against the unmodified code is shown to
+the owner before any implementation.
+
+### D-038 (addendum, before implementation) — `TX_DROPPED` needs the node to have forgotten the tx
+Found while writing the tests: "no receipt after `ANCHOR_PENDING_TIMEOUT_SEC`" is not by itself proof the tx was
+dropped. On a congested chain a tx can sit in the node's mempool for longer than the timeout; declaring it dropped and
+re-sending would put a second tx for the same (document, version) in flight (the contract would revert the loser and
+waste its gas, though never create a second anchor). **Rule:** a PENDING anchor is declared `TX_DROPPED` only when it is
+older than the timeout, `eth_getTransactionReceipt` has nothing, **and** `eth_getTransactionByHash` returns nothing
+(the node no longer knows the tx — a restart, reorg or testnet reset). If the node is unreachable the check is skipped,
+never treated as "dropped". A tx the node still holds is left waiting, however old; the age is then visible to
+operators through `stuck_since` and the `AWAITING_CONFIRMATION` state. New helper `chain.tx_known(tx_hash)`.
+Tests: `test_young_or_mempool_pending_tx_is_never_resent` (manual-mining node, row older than the timeout, legacy row
+without `live`, wallet nonce must not move) and `test_tx_lost_when_node_is_killed_mid_anchor_is_dropped_and_resent`.
+
+### D-043 — Implementation details that go beyond D-037..D-042 (recorded as they were decided)
+- **Coverage exclusion removed.** `pyproject.toml` omitted `app/workers/*` from the coverage gate on the grounds
+  that the worker was the first thing the project's cut-list says may go untested. REL-01 makes it the recovery path
+  for failed anchors, so the exclusion is deleted (Guardrail #11) and `docs/TEST_PLAN.md` is updated to say what is
+  and is not covered.
+- **Heartbeat fields.** `last_error_code` is the *most recent* error and stays visible after a clean loop, with
+  `last_error_at`; `last_ok_at` is stamped by clean loops. (D-040 said `last_error_code`; the timestamp is added so an
+  operator can tell a stale error from a current one.)
+- **Re-queue refusal code.** `409 ANCHOR_NOT_RETRYABLE` for: document not APPROVED, an anchor already PENDING or
+  CONFIRMED for the latest version, or the document leased by a live worker. Unknown or malformed ids are `404`. A
+  missing location on the retry request is `422 InvalidLocation`, like every other geofenced endpoint here.
+- **What `attempts` counts.** Failed *worker* attempts (and dropped/reverted txs found by the confirm pass). The
+  in-request attempts inside `approve()` are not counted (D-038). A successful send is not a failure, so a document
+  that sends and then has its tx dropped counts one attempt per drop.
+- **Enqueue decides "permanent now" immediately.** When `approve()`'s own attempts fail with `NOT_AUTHORIZED` or
+  `NOT_CONFIGURED`, `anchor_retry.permanent` is set at once and `ANCHOR_PERMANENT_FAIL` is audited, so an admin sees it
+  without waiting a worker pass. `ALREADY_ANCHORED` at that point is *not* permanent: the worker's chain read decides
+  between adopt and permanent. It is still bounded (`ANCHOR_RETRY_MAX_ATTEMPTS`) so it cannot loop.
+- **Reverted/dropped detection uses a compare-and-swap** (`fail_pending`: PENDING to FAILED only if still PENDING), so
+  `approve()` and a worker pass that both see the same reverted receipt count it once.
+- **No confirm wait inside a worker attempt.** After sending, the attempt records the PENDING row and returns; the
+  next loop's confirm pass promotes it (up to `ANCHOR_WORKER_INTERVAL_SEC` = 15 s later). This keeps the lease
+  short in practice; it is still configured longer than the confirmation timeout (D-038) as the safe upper bound.
+- **Terminal state is cleared.** On promotion `anchor_retry` is removed from the document; history stays in the anchor
+  rows and the audit log.
+- **Attention list bound.** At most 500 APPROVED documents are scanned per request (a stuck document is by
+  definition APPROVED, and APPROVED is a state a healthy document leaves within seconds).
+
+### Outcome of REL-01, stage 1 (backend: D-037..D-043)
+**Verified with exit codes (final tree):** backend `pytest` 0 (**268 passed**, 93.76 % coverage, gate 60 %),
+`ruff check app tests` 0, `pip-audit -r requirements.txt --no-deps` 0 (no known vulnerabilities; no dependency
+changed). Frontend is untouched in this stage.
+**Tests fail without the fix.** The new suite was run against the unmodified application code first (only test files
+existed): **43 failed, 1 error (the policy module did not exist), 1 passed**, in 342 s, with no hang (every body has its
+own hard timeout). Reasons, by test: FAILED anchors never retried (`anchor_retry` absent); a worker pass **raised
+`ConnectionError`** with the node killed; `run_forever` **died** on the first RPC error; documents stayed APPROVED for
+the whole 25 s polling window in the adopt, different-hash, interrupted-promotion, missing-object and bounded-retry
+cases; the old `__main__` ignores `--once` and loops, so the two-process race hit its 60 s timeout; the API and
+`/health` additions were 404 / missing. The one test that passed on the old code
+(`test_young_or_mempool_pending_tx_is_never_resent`) is a guard for the *new* worker, which the old worker could not
+violate. After the fix: 15 + 2 reliability tests, the API, ops and unit tests all pass.
+**Mutation check (the red run above only proves "fails when the feature is missing").** Each safety mechanism was
+broken in turn, its test run, and the file restored byte-for-byte (md5 verified): lease not exclusive, caught by
+`test_two_workers_in_one_process_send_exactly_one_tx`; never reading the chain, caught by the adopt test; judging
+"anchor exists" by `live` instead of status, caught by the legacy-row mempool test; unbounded attempts, caught by the
+bounded-retries test; skipping the stored-object check, caught by the missing-object test; **declaring `TX_DROPPED` on
+age alone was NOT caught at first**: the test ran its passes back to back, inside the 50 ms backoff, so the re-send
+never happened in the window. The test was fixed (passes spread over 0.8 s, and it now also asserts the row is still
+PENDING) and the mutation is caught.
+**What the race tests do and do not prove.** The in-process test is the one sensitive to the lease. The two-OS-process
+test proves the end state across processes (one CONFIRMED row, one on-chain anchor, at most one `live` row, a
+loser's nonce collision heals); with the lease removed it would still pass, because the contract's `already anchored`
+revert is the guard that holds across processes (D-037's "layers"). Both run on one machine; a cross-host race is not
+exercised.
+**Tests added in the same change (Guardrail #11):** exact-map RBAC test, role x endpoint matrix and `/health` shape
+updated; reverted-receipt paths in `approve()` and in the worker (found uncovered by the coverage report and then
+tested).
+**Dev data (read-only, nothing sent, worker not started against it).** `--dry-run` on the dev DB: 1 APPROVED
+document, "Approval Demo" v1, `NEEDS_ADMIN_RETRY` (36.0 days), chain `ABSENT`, stored object `MISSING`, **0
+transactions would be sent**; a fingerprint of every collection was identical before and after. An admin re-queue of
+that document would end as permanent `STORED_OBJECT_MISSING`, not a transaction. Separately noted, out of scope: 4
+other dev versions also have no stored object (one is ACTIVE).
+**Not verified:** a GitHub Actions run (nothing pushed; CI must start no worker, which the opt-in compose profile
+guarantees by construction: `docker compose config --services` lists no `anchor-worker` without `--profile worker`); a
+real Sepolia run; running the compose worker container itself (compose file validated with `docker compose config`
+only). The UI alert and the CLAUDE.md #10 notes are stage 2.

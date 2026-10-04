@@ -71,6 +71,30 @@ class Settings(BaseSettings):
     ANCHOR_CONFIRM_POLL_ATTEMPTS: int = 5
     ANCHOR_CONFIRM_POLL_INTERVAL_SEC: float = 0.3
 
+    # --- Anchor retry worker (REL-01, D-037..D-040) ---
+    # Transient failures (RPC down, dropped tx, unknown error): backoff
+    # min(CAP, BASE * 2^(n-1)) seconds, MAX_ATTEMPTS failures, then permanent
+    # RETRIES_EXHAUSTED. INSUFFICIENT_FUNDS uses its own, longer schedule; REVERTED
+    # gets REVERT_MAX_ATTEMPTS.
+    ANCHOR_RETRY_BASE_SEC: float = 30.0
+    ANCHOR_RETRY_CAP_SEC: float = 900.0
+    ANCHOR_RETRY_MAX_ATTEMPTS: int = 8
+    ANCHOR_REVERT_MAX_ATTEMPTS: int = 2
+    ANCHOR_FUNDS_RETRY_BASE_SEC: float = 600.0
+    ANCHOR_FUNDS_RETRY_CAP_SEC: float = 3600.0
+    # A PENDING tx with no receipt, that the node no longer knows, after this long
+    # is declared TX_DROPPED. The lease must stay longer than this (D-038).
+    ANCHOR_PENDING_TIMEOUT_SEC: float = 600.0
+    ANCHOR_LEASE_SEC: float = 900.0
+    # The worker only auto-sends for documents stuck for less than this; older ones
+    # are listed as NEEDS_ADMIN_RETRY and wait for an admin re-queue (D-040).
+    ANCHOR_AUTO_RETRY_MAX_AGE_DAYS: int = 7
+    ANCHOR_WORKER_INTERVAL_SEC: float = 15.0
+    ANCHOR_WORKER_STALE_SEC: float = 120.0
+    # Stuck APPROVED documents show in the attention list after this long even if
+    # nothing has flagged them yet.
+    ANCHOR_ATTENTION_GRACE_SEC: float = 120.0
+
     # --- Geofence ---
     GEO_ACCURACY_MAX_M: int = 100
     GEO_FRESHNESS_MAX_SEC: int = 60

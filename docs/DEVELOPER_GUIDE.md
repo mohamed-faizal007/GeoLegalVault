@@ -16,7 +16,7 @@ geolegalvault/
 │   │                   models.py (collection name / enums)
 │   ├── app/services/   cross-module infrastructure — hashing, storage (R2/MinIO),
 │   │                   blockchain (web3.py), geofence (point-in-polygon)
-│   ├── app/workers/    optional anchor-confirmation poller
+│   ├── app/workers/    the one optional worker: anchor confirm + retry (REL-01)
 │   └── tests/{unit,integration,api}/
 ├── contracts/           Hardhat project — DocumentAnchor.sol, tests, deploy script
 ├── scripts/              seed.py, backup.sh, faucet_check.py, anchor_smoke_test.py

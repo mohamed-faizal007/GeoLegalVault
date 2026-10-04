@@ -180,6 +180,59 @@ async def mark_failed(db: AsyncIOMotorDatabase, anchor_id: ObjectId, error: str)
     )
 
 
+async def fail_pending(db: AsyncIOMotorDatabase, anchor_id: ObjectId, error: str) -> bool:
+    """Claims PENDING -> FAILED with a fixed error code (a reverted or dropped tx). True only
+    for the one caller that made the change, so a worker pass and `approve()` cannot both
+    count the same failure (D-038). Clears `live` so a retry can insert a fresh live row."""
+    result = await db[BLOCKCHAIN_ANCHORS_COLLECTION].update_one(
+        {"_id": anchor_id, "status": AnchorStatus.PENDING.value},
+        {"$set": {"status": AnchorStatus.FAILED.value, "error": error, "live": False}},
+    )
+    return result.modified_count == 1
+
+
+async def create_adopted_anchor(
+    db: AsyncIOMotorDatabase,
+    *,
+    document_id: ObjectId,
+    version_id: ObjectId,
+    sha256: str,
+    event_type: int,
+) -> dict[str, Any]:
+    """Records that the chain already holds this version's hash (a tx whose row was lost,
+    D-037 step 2). There is no tx hash to record, so the key is left out entirely (the
+    sparse unique index on tx_hash ignores absent keys). The row is CONFIRMED and live."""
+    settings = get_settings()
+    moment = datetime.now(UTC)
+    doc = {
+        "document_id": document_id,
+        "version_id": version_id,
+        "sha256": sha256,
+        "event_type": event_type,
+        "block_number": None,
+        "contract_address": settings.CONTRACT_ADDRESS,
+        "network": NETWORK,
+        "status": AnchorStatus.CONFIRMED.value,
+        "live": True,
+        "adopted": True,
+        "error": None,
+        "created_at": moment,
+        "confirmed_at": moment,
+    }
+    try:
+        result = await db[BLOCKCHAIN_ANCHORS_COLLECTION].insert_one(doc)
+    except DuplicateKeyError:
+        existing = await db[BLOCKCHAIN_ANCHORS_COLLECTION].find_one(
+            {"version_id": version_id, "live": True}
+        )
+        if existing is not None:
+            return existing
+        raise
+    doc["_id"] = result.inserted_id
+    doc["tx_hash"] = None
+    return doc
+
+
 async def get_latest_anchor_for_version(
     db: AsyncIOMotorDatabase, version_id: str
 ) -> dict[str, Any] | None:

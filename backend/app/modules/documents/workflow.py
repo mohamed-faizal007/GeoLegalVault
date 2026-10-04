@@ -31,6 +31,7 @@ from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.rbac import enforce_maker_checker
 from app.modules.audit import service as audit
+from app.modules.blockchain import retry as anchor_retry
 from app.modules.blockchain import service as blockchain_service
 from app.modules.blockchain.models import AnchorEventType, AnchorStatus
 from app.modules.documents import service as documents_service
@@ -230,6 +231,23 @@ async def promote_confirmed_anchor(
     # ACTIVATE) — D-023.
     if not await blockchain_service.mark_confirmed(db, anchor_doc["_id"], block_number):
         return await documents_service.get_document_by_id(db, str(document_id))
+    return await complete_promotion(
+        db, document=document, version=version, anchor_doc=anchor_doc, actor_id=actor_id
+    )
+
+
+async def complete_promotion(
+    db: AsyncIOMotorDatabase,
+    *,
+    document: dict[str, Any],
+    version: dict[str, Any],
+    anchor_doc: dict[str, Any],
+    actor_id: Any = "SYSTEM",
+) -> dict[str, Any]:
+    """Everything after the anchor is CONFIRMED. Every write is idempotent, so the worker
+    can re-run it for a document a crash left APPROVED under an already-CONFIRMED anchor
+    (REL-01, D-037 defect 6) — only a holder of the document's lease does that."""
+    document_id = document["_id"]
     await versions_service.mark_confirmed_anchor(
         db,
         version["_id"],
@@ -243,13 +261,14 @@ async def promote_confirmed_anchor(
         target_type="version",
         target_id=version["_id"],
         result="SUCCESS",
-        meta={"tx_hash": anchor_doc["tx_hash"]},
+        meta={"tx_hash": anchor_doc.get("tx_hash")},
     )
 
     await versions_service.update_status(db, version["_id"], VersionStatus.ACTIVE)
     await documents_service.set_current_version(db, document_id, version["_id"])
     await documents_service.update_status(db, document_id, DocumentStatus.ACTIVE)
     await documents_service.set_anchor_alert(db, document_id, False)
+    await anchor_retry.clear(db, document_id)
 
     previous_active = await versions_service.find_active_version_excluding(
         db, document_id, exclude_version_id=version["_id"]
@@ -333,6 +352,13 @@ async def approve(
             result="FAILED",
             meta={"error": anchor_doc.get("error")},
         )
+        # Hand over to the worker (REL-01). A failure retrying cannot fix is marked
+        # permanent here, and audited, so it shows up for an admin straight away.
+        decision = await anchor_retry.enqueue(
+            db, document_id, error_code=anchor_doc.get("error")
+        )
+        if decision.permanent:
+            await anchor_retry.audit_permanent_failure(version["_id"], decision.reason)
         refreshed_document = await documents_service.get_document_by_id(db, str(document_id))
         return {"document": refreshed_document, "version": version, "anchor": anchor_doc}
 
@@ -352,8 +378,10 @@ async def approve(
         return {"document": refreshed_document, "version": version, "anchor": anchor_doc}
 
     if receipt["status"] != 1:
-        await blockchain_service.mark_failed(db, anchor_doc["_id"], REVERTED)
+        reverted_here = await blockchain_service.fail_pending(db, anchor_doc["_id"], REVERTED)
         await documents_service.set_anchor_alert(db, document_id, True)
+        if reverted_here:
+            await anchor_retry.enqueue(db, document_id, error_code=REVERTED)
         _logger.warning(
             "workflow: ANCHOR_FAIL — transaction reverted",
             extra={"document_id": str(document_id), "tx_hash": anchor_doc.get("tx_hash")},
