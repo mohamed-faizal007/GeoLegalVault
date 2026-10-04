@@ -21,6 +21,8 @@ export const PERMISSIONS = {
   GEOFENCE_MANAGE: "geofence:manage",
   AUDIT_VIEW: "audit:view",
   INTEGRITY_CLEAR: "integrity:clear",
+  ANCHOR_VIEW: "anchor:view",
+  ANCHOR_RETRY: "anchor:retry",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -45,6 +47,8 @@ const ROLE_PERMISSIONS: Record<Role, Set<Permission>> = {
     PERMISSIONS.AUDIT_VIEW,
     PERMISSIONS.DOCUMENT_ARCHIVE,
     PERMISSIONS.INTEGRITY_CLEAR,
+    PERMISSIONS.ANCHOR_VIEW,
+    PERMISSIONS.ANCHOR_RETRY,
   ]),
   LEGAL_OFFICER: new Set([
     PERMISSIONS.DOCUMENT_UPLOAD,
@@ -55,6 +59,7 @@ const ROLE_PERMISSIONS: Record<Role, Set<Permission>> = {
     PERMISSIONS.DOCUMENT_ARCHIVE,
     PERMISSIONS.APPROVE_PERFORM,
     PERMISSIONS.VERIFY_PERFORM,
+    PERMISSIONS.ANCHOR_VIEW,
   ]),
   REVIEWING_OFFICER: new Set([
     PERMISSIONS.DOCUMENT_VIEW,
@@ -75,6 +80,7 @@ const ROLE_PERMISSIONS: Record<Role, Set<Permission>> = {
     PERMISSIONS.DOCUMENT_SEARCH,
     PERMISSIONS.VERIFY_PERFORM,
     PERMISSIONS.AUDIT_VIEW,
+    PERMISSIONS.ANCHOR_VIEW,
   ]),
 };
 

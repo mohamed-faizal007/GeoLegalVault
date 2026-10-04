@@ -1,4 +1,4 @@
-import { http } from "./http";
+import { geoHeaders, http, type GeoCoords } from "./http";
 
 export interface OnchainAnchor {
   hash: string;
@@ -27,4 +27,53 @@ export interface AnchorOut {
 
 export function getAnchor(versionId: string): Promise<AnchorOut> {
   return http.get<AnchorOut>(`/blockchain/anchor/${versionId}`);
+}
+
+/** Where a stuck anchor stands (D-041). Always rendered as text, never as colour alone. */
+export type AnchorAttentionState =
+  | "RETRYING"
+  | "AWAITING_CONFIRMATION"
+  | "PERMANENT_FAILURE"
+  | "NEEDS_ADMIN_RETRY";
+
+export interface AnchorAttentionItem {
+  document_id: string;
+  title: string;
+  version_no: number;
+  state: AnchorAttentionState;
+  /** A fixed code from the backend, never raw error text; see lib/anchorAttention.ts. */
+  last_error: string | null;
+  attempts: number;
+  next_attempt_at: string | null;
+  stuck_since: string;
+  /** Whether the server will let *this caller* ask for a re-drive. */
+  can_retry: boolean;
+}
+
+export interface AnchorAttentionResponse {
+  items: AnchorAttentionItem[];
+  total: number;
+}
+
+export interface AnchorRetryResponse {
+  document_id: string;
+  state: string;
+  next_attempt_at: string | null;
+}
+
+export function getAnchorAttention(): Promise<AnchorAttentionResponse> {
+  return http.get<AnchorAttentionResponse>("/blockchain/anchors/attention");
+}
+
+/** Admin-only, geofenced, audited. It only re-queues: the background worker signs. */
+export function retryAnchor(
+  documentId: string,
+  reason: string,
+  coords: GeoCoords,
+): Promise<AnchorRetryResponse> {
+  return http.post<AnchorRetryResponse>(
+    `/blockchain/anchors/${documentId}/retry`,
+    { reason },
+    { headers: geoHeaders(coords) },
+  );
 }

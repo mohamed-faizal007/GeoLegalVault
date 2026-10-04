@@ -32,6 +32,11 @@ const STATUS_TONE: Record<string, StatusTone> = {
   PENDING: "warn",
   CONFIRMED: "success",
   FAILED: "danger",
+  // Anchor attention states (D-041). The badge text states the state; colour only helps scanning.
+  RETRYING: "warn",
+  AWAITING_CONFIRMATION: "info",
+  NEEDS_ADMIN_RETRY: "warn",
+  PERMANENT_FAILURE: "danger",
 };
 
 export function statusTone(status: string): StatusTone {

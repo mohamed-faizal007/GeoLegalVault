@@ -11,6 +11,7 @@ import {
 import { Link } from "react-router-dom";
 
 import { listDocuments } from "../api/documents";
+import AnchorAttentionBanner from "../components/AnchorAttentionBanner";
 import EmptyState from "../components/EmptyState";
 import ErrorBanner from "../components/ErrorBanner";
 import StatusBadge from "../components/StatusBadge";
@@ -167,6 +168,9 @@ export default function Dashboard() {
           {role ? ROLE_LABELS[role] : ""} — here's what's happening across the vault.
         </p>
       </header>
+
+      {/* Renders nothing unless the role may see stuck anchors and there are some (REL-01). */}
+      <AnchorAttentionBanner />
 
       <section aria-label="Key figures" className="anim-delay-1 animate-fade-up">
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">

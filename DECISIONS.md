@@ -1055,11 +1055,15 @@ bounded-retries test; skipping the stored-object check, caught by the missing-ob
 age alone was NOT caught at first**: the test ran its passes back to back, inside the 50 ms backoff, so the re-send
 never happened in the window. The test was fixed (passes spread over 0.8 s, and it now also asserts the row is still
 PENDING) and the mutation is caught.
-**What the race tests do and do not prove.** The in-process test is the one sensitive to the lease. The two-OS-process
-test proves the end state across processes (one CONFIRMED row, one on-chain anchor, at most one `live` row, a
-loser's nonce collision heals); with the lease removed it would still pass, because the contract's `already anchored`
-revert is the guard that holds across processes (D-037's "layers"). Both run on one machine; a cross-host race is not
-exercised.
+**What prevents a duplicate anchor, stated plainly.** The contract's `already anchored` revert is what prevents a
+duplicate anchor across processes (and across crashes and hosts): no second anchor for a (document, version) can ever
+exist on chain, whatever the application does. The **lease does not provide that guarantee; it only avoids wasted
+work** (a second worker sending a tx that would just revert and burn gas, and a spurious FAILED row). The partial unique
+index and the status-based check protect the *database* from a duplicate live row, not the chain. Consequently the
+tests split the same way: the in-process test is the one sensitive to the lease (it counts sends, which is the wasted
+work); the two-OS-process test proves the end state across processes (one CONFIRMED row, one on-chain anchor, at most
+one `live` row, a loser's nonce collision heals) and **would still pass with the lease removed**, because the contract
+is the guard. Both run on one machine; a cross-host race is not exercised.
 **Tests added in the same change (Guardrail #11):** exact-map RBAC test, role x endpoint matrix and `/health` shape
 updated; reverted-receipt paths in `approve()` and in the worker (found uncovered by the coverage report and then
 tested).
@@ -1067,8 +1071,59 @@ tested).
 document, "Approval Demo" v1, `NEEDS_ADMIN_RETRY` (36.0 days), chain `ABSENT`, stored object `MISSING`, **0
 transactions would be sent**; a fingerprint of every collection was identical before and after. An admin re-queue of
 that document would end as permanent `STORED_OBJECT_MISSING`, not a transaction. Separately noted, out of scope: 4
-other dev versions also have no stored object (one is ACTIVE).
+other dev versions also have no stored object. All 5 (Approval Demo above, and "Manual Verify NDA", "Test Contract",
+"Lifecycle Test" and "Anchor Demo", all created 2026-08-29 with old-format `docs/{id}/v1` keys) were checked against the
+old MinIO volume `geolegalvault_minio_data` (read-only mount): none of their objects is in it, while a control
+document is. **So they were already broken before the RustFS switch (D-034), not caused by it.** The one with an
+ACTIVE version is "Anchor Demo" (document `6a92dcc06aa1882bd4c46f8a`, document status ARCHIVED, version
+`6a92dcc06aa1882bd4c46f8b`, anchored); it will verify as unreachable/mismatch until its file is restored, which is
+outside REL-01.
 **Not verified:** a GitHub Actions run (nothing pushed; CI must start no worker, which the opt-in compose profile
 guarantees by construction: `docker compose config --services` lists no `anchor-worker` without `--profile worker`); a
 real Sepolia run; running the compose worker container itself (compose file validated with `docker compose config`
 only). The UI alert and the CLAUDE.md #10 notes are stage 2.
+
+### D-044 — REL-01 stage 2: the Dashboard alert and the Administrator retry (logged after the code was written, which is the wrong order; the decisions themselves were made before the tests)
+- **Where and who.** A banner at the top of the Dashboard (`components/AnchorAttentionBanner.tsx`), rendered only for roles
+  with `anchor:view` (Administrator, Legal Officer, Auditor; the client map in `lib/permissions.ts` mirrors the backend, UX
+  only). For other roles it renders nothing and **does not call the API**. It renders nothing when no document needs
+  attention, so a healthy vault shows no banner. It polls every 30 s.
+- **State in words, not colour.** Each row shows the state as a `StatusBadge` whose text is the state (`RETRYING`,
+  `AWAITING CONFIRMATION`, `PERMANENT FAILURE`, `NEEDS ADMIN RETRY`) plus a sentence saying what is happening and who has
+  to act ("An administrator needs to request a retry" for roles that cannot). Tones in `lib/status.ts` only help scanning.
+- **No raw error text, no RPC details.** The backend already sends only a fixed code (D-020, D-041). The UI additionally maps
+  *known* codes to a sentence and prints the code in brackets, and an **unrecognised value becomes a generic sentence and is
+  never echoed** (`lib/anchorAttention.ts`), so a future backend change cannot put an RPC URL on screen. Tests assert a
+  leaky string never reaches the DOM.
+- **Retry (Administrator only).** Button "Retry anchoring" per row, shown only if the role has `anchor:retry` **and** the
+  server says `can_retry` **and** the state is not `AWAITING_CONFIRMATION` (the server refuses that too). It opens an inline
+  form (same pattern as "Clear integrity flag"): a reason textarea, at least 10 characters (the server's rule), a note that
+  this only re-queues and the reason is audited (no personal data). Submitting reads the browser location and sends it as
+  `X-Geo-*` headers like Approve (the endpoint is geofenced, so the admin needs an assigned geofence; a denial shows through
+  the existing `ErrorBanner`). On success the list is refetched and a status message confirms the request.
+- **Honesty about the worker.** A retry only re-queues; if no worker runs, nothing happens. While the banner has items it
+  reads the unauthenticated `/health` (`anchor_worker`) and, if `stale`, says so plainly. It is a hint, not a guarantee.
+- **Reuse.** `StatusBadge`, `ErrorBanner`, the `card`/`card-header`/`btn-*`/`input` classes, `formatDateTime`, `geoHeaders`
+  and `getCurrentLocation`. No new dependency, no change to `DocumentOut`.
+- **Error text.** `ANCHOR_NOT_RETRYABLE` gets a plain-language message in `lib/errorMessages.ts`.
+- **Not doing:** a per-document banner on the details page, notifications (FUN-01), editing the stored file, bulk retry.
+- **Tests.** `components/__tests__/AnchorAttentionBanner.test.tsx` (per role, per state, no leakage, retry flow, refusal,
+  location failure, worker hint), `pages/__tests__/DashboardAnchorAlert.test.tsx` (placement), `lib/__tests__/
+  anchorAttention.test.ts` (text mapping and the permission mirror). The Dashboard test waits up to 8 s per query: a first
+  version used the 1 s default and failed once under full-suite load.
+
+### Outcome of REL-01, stage 2 (UI: D-044)
+**Verified with exit codes.** Frontend `tsc -b` 0, `eslint .` 0, `vitest run` 0 (**92 passed**, 15 files; run twice in a row
+after a timing fix, see D-044). Backend `ruff check app tests` 0. Backend `pytest`: **267 passed, 1 failed, exit 1**, coverage
+93.80 %. The one failure is `tests/integration/test_body_limit_realsocket.py::
+test_other_requests_stay_prompt_while_a_half_sent_upload_hangs` (hard limit `< 5 s`; measured 5.4 s in the full run, and
+5.7-6.3 s in three isolated runs). **It is not caused by REL-01:** the same test, run in a temporary worktree at the commit
+before any REL-01 work (`4fec3f8`, with the repo's `.env` copied in and removed afterwards), fails the same way, 5.5-5.9 s on
+three of three runs. The new `/health` heartbeat read measures 0.00 s. D-034 had recorded this test as timing-marginal
+(5.1 s once, passing in isolation); on this machine today it is consistently over the limit, with ~1.5 GB RAM free. It passed
+in the Stage 1 full runs (268 passed). It is a property of the test's margin and this machine's current load, not of the code
+under test; it is left unchanged here and flagged for a decision on how to make it robust (see D-021's reasoning against just
+raising a timeout).
+**Not verified:** a GitHub Actions run (nothing pushed); the banner in a real browser (the component is covered by
+jsdom tests only, so layout and the 30 s polling were not seen on screen); the admin retry end to end against a running
+worker (the API half is tested against the real backend with a mocked client on the frontend side).

@@ -21,6 +21,8 @@ const CODE_MESSAGES: Record<string, string> = {
   NOT_FOUND: "That item couldn't be found.",
   STORAGE_UNAVAILABLE: "The file storage service is temporarily unavailable. Try again shortly.",
   VALIDATION_ERROR: "The submitted data didn't pass validation.",
+  ANCHOR_NOT_RETRYABLE:
+    "This anchor can't be re-queued right now: it is already in flight, confirmed, or being worked on. Refresh and check its state.",
 };
 
 export function describeError(error: unknown): { code: string; message: string } {

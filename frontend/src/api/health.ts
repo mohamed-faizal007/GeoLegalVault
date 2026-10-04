@@ -5,6 +5,8 @@ export interface HealthResponse {
   mongo: string;
   storage: string;
   chain: string;
+  /** "ok" if the optional anchor worker has a fresh heartbeat; absent on older servers. */
+  anchor_worker?: "ok" | "stale";
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
