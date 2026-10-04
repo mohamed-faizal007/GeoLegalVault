@@ -16,9 +16,10 @@ as a bug to flag, not license to ignore the guardrail.
 
 Every guardrail below was cross-checked against the actual implementation (not just the comment
 claiming it). #2, #5 and #9 were re-checked and corrected on 2026-10-04 (see their "Enforced at" and
-"Known limits" notes and `DECISIONS.md` D-027/D-028). Open mismatches that are tracked but not yet fixed:
-#10 (the confirmation worker exists but is not in the compose/deploy path, REL-01). Where a guardrail
-says "Known limits", those are things the enforcement does NOT cover; do not read it as a guarantee.
+"Known limits" notes and `DECISIONS.md` D-027/D-028). #10 was brought in line with the code on 2026-10-04 by
+REL-01 (`DECISIONS.md` D-037..D-044): the worker is deployable and recovers failed anchors. No open mismatch
+between a guardrail and the code is tracked here. Where a guardrail says "Known limits", those are things the
+enforcement does NOT cover; do not read it as a guarantee.
 
 ---
 
@@ -66,7 +67,8 @@ specifically calls out never logging the service-wallet key).
 The backend holds exactly one service wallet key (env var) and signs all anchoring
 transactions. There is no per-user MetaMask flow, and no endpoint lets a user trigger an
 anchor directly — anchoring is an automatic system side effect of a document reaching
-`APPROVED`.
+`APPROVED`. A user may *request a re-drive* of an anchor the system already owes (the audited,
+Administrator-only re-queue listed below); they never sign and never choose what is anchored.
 
 **Why:** per-user wallets would mean asking legal/records staff to manage crypto wallets and
 gas, which is out of scope for this product's users, and would multiply the ways anchoring
@@ -75,13 +77,16 @@ could go wrong or be bypassed.
 **Enforced at:**
 - [`backend/app/modules/documents/workflow.py:10-14`](backend/app/modules/documents/workflow.py#L10-L14) — `approve()` is the only transition that touches the chain, done automatically.
 - [`backend/app/modules/blockchain/service.py:6`](backend/app/modules/blockchain/service.py#L6) — docstring confirms no user-triggered-anchor path exists.
-- [`backend/app/modules/blockchain/router.py:4`](backend/app/modules/blockchain/router.py#L4) — anchoring is wired as a side effect of approval, not its own user-facing route.
+- [`backend/app/modules/blockchain/router.py:1-8`](backend/app/modules/blockchain/router.py#L1-L8) — anchoring is wired as a side effect of approval, not its own user-facing route.
+- [`backend/app/modules/blockchain/router.py`](backend/app/modules/blockchain/router.py) `requeue_anchor` + [`retry.py`](backend/app/modules/blockchain/retry.py) `requeue` — the one user-initiated write (REL-01, D-041): `anchor:retry` is Administrator-only, the route is geofenced and audited (`ANCHOR_RETRY_REQUESTED`), and the body is `{reason}` only (`extra="forbid"`: no hash, version, tx or address can be named). It puts a document the system already owes back in the worker's queue and **never contacts the chain**; the worker's service wallet signs, and the hash always comes from the DB version row. `tests/api/test_anchor_attention.py` patches `get_service_account` to fail if the API ever tries to sign.
 - [`contracts/contracts/DocumentAnchor.sol:32-35`](contracts/contracts/DocumentAnchor.sol#L32-L35) — `onlyWriter` modifier restricts `anchor()` to addresses the owner (service wallet deployer) explicitly allow-lists.
 - No wallet-connect UI exists anywhere in `frontend/src/`.
 
 **Don't:** add a "connect wallet" button, an endpoint that lets any authenticated user call
 `anchor()` directly, or a second signer/writer without going through `setWriter` deliberately
-and documenting why.
+and documenting why. Don't make the re-queue endpoint contact the chain, sign, or accept a hash,
+version, tx or address; if a "retry" ever needs to carry any of those, it is a new anchoring path and
+needs this guardrail revisited, not a quiet change.
 
 ---
 
@@ -223,13 +228,24 @@ architecture in `docs/IMPLEMENTATION_PROMPT.md`) and matches the project's actua
 Guardrail #8 (no microservices/message brokers).
 
 **Enforced at:**
-- [`backend/app/workers/anchor_confirmer.py:2`](backend/app/workers/anchor_confirmer.py#L2) — the one sanctioned background worker, explicitly framed as the guardrail's allowed exception.
-- [`backend/pyproject.toml:25`](backend/pyproject.toml#L25) — comment frames the worker as part of "Guardrail's own golden-rule cut list."
-- [`docs/DEVELOPER_GUIDE.md:115`](docs/DEVELOPER_GUIDE.md#L115) — reiterates no other microservices exist.
+- [`backend/app/workers/anchor_confirmer.py`](backend/app/workers/anchor_confirmer.py) — the one sanctioned background worker (module docstring frames it as the guardrail's allowed exception). Since REL-01 (D-037..D-043) it both confirms PENDING anchors and re-drives anchors that did not land, so a document is not left in `APPROVED`. Modes: loop, `--once`, `--healthcheck`, and a read-only `--dry-run`.
+- [`docker-compose.yml`](docker-compose.yml) service `anchor-worker` — the **same image** as the API with a different command, behind the opt-in compose profile `worker` (`docker compose --profile worker up -d anchor-worker`). It is not a second service in the architecture; it is the one worker, made deployable. [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) §4a covers deploying it (Render background worker, same Dockerfile).
+- [`backend/app/workers/heartbeat.py`](backend/app/workers/heartbeat.py) — liveness is one document in the app's own Mongo (`worker_heartbeats`), read by `/health` (`anchor_worker: ok|stale`, which never changes the overall `status`) and by the compose healthcheck. No queue, no broker: retry state is `documents.anchor_retry` and the lease is a compare-and-swap on it ([`retry.py`](backend/app/modules/blockchain/retry.py)).
+- [`docs/DEVELOPER_GUIDE.md:19`](docs/DEVELOPER_GUIDE.md#L19) (the worker's place in the tree) and [`docs/DEVELOPER_GUIDE.md:188-190`](docs/DEVELOPER_GUIDE.md#L188-L190) — reiterate that no other microservices exist. (The previous citation, `:115`, had drifted: that line is now migration commands.)
+- Tests: `backend/tests/integration/test_anchor_reliability.py` (real local Hardhat node killed and restarted mid-anchor, transient and permanent failures, two workers racing in-process and as two OS processes), `test_anchor_worker_ops.py`, `tests/unit/test_anchor_retry_policy.py`.
+
+**Known limits (do not read #10 as more than this):**
+- **Opt-in, and nothing enforces that it is deployed.** `docker compose up` and CI do not start the worker. Without it the happy path still works, but an anchor that fails or is dropped waits for an administrator: the Dashboard alert shows it, `/health` reports `anchor_worker: stale`, and the admin re-queue only puts it back in a queue nobody is reading. A real deployment must start the worker (DEPLOYMENT.md §4a).
+- **What prevents a duplicate anchor is the contract, not the worker.** The contract's `already anchored` revert is what stops a second anchor for a (document, version) across processes, crashes and hosts. The lease only avoids wasted work (a second worker sending a transaction that would revert and burn gas); the partial unique index and status check only protect the database from a duplicate row. The multi-process test runs on one machine, two processes.
+- **The API and the worker sign with the same service wallet** (#3). A cross-process nonce collision is retried as a transient failure, not prevented.
+- **Old stuck documents are never auto-sent.** Anything stuck longer than `ANCHOR_AUTO_RETRY_MAX_AGE_DAYS` (default 7) waits for an admin re-queue, so a first start against a database pointed at a public chain cannot spend gas on months-old rows. `--dry-run` lists what it would do first.
+- **Not exercised:** a real Sepolia run, the worker container itself, or a cross-host race.
 
 **Don't:** split auth, documents, or geofencing into separately-deployed services, or add a
-message broker (Celery/RabbitMQ/etc.) for anything other than the one confirmation worker
-already in place.
+message broker (Celery/RabbitMQ/etc.) for anything other than the one worker already in place.
+Don't add a second *kind* of worker, scheduler or cron job for anything else (new background duties
+belong in `anchor_confirmer.py`'s pass or need this guardrail revisited), and don't give the worker any
+path that signs anything other than the hash read from a DB version row.
 
 ---
 
