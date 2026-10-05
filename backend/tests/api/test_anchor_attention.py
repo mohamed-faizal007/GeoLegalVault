@@ -313,7 +313,13 @@ async def test_old_stuck_documents_are_not_auto_sent_until_an_admin_requeues(
     )
 
     spy = AsyncMock(side_effect=ConnectionError(LEAKY_RPC_ERROR))
-    with patch.object(chain, "anchor_hash", new=spy):
+    # The worker reads the chain ("is it already anchored?") before it sends. Fake that read too,
+    # so the test needs no chain settings and no network (D-047).
+    not_anchored = AsyncMock(return_value={"exists": False})
+    with (
+        patch.object(chain, "anchor_hash", new=spy),
+        patch.object(chain, "get_onchain_anchor", new=not_anchored),
+    ):
         for _ in range(3):
             await run_pass(db)
         assert spy.await_count == 0, "the worker sent for a document older than the cutoff"

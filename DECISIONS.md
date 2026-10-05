@@ -1201,3 +1201,39 @@ correlated with failure was running from the main checkout on this machine, for 
 tested: scanning of the repo directory, different file-system caching, other processes in the session). It is left unchanged:
 making it deterministic would change what it tests (D-029 already has a deterministic form,
 `test_stale_amendment_request_never_becomes_a_second_version`), and the choice belongs to the owner.
+
+### D-047 — `test_old_stuck_documents_are_not_auto_sent_until_an_admin_requeues` depended on the owner's `.env` (CI red on `7ae1218`)
+**Problem.** CI failed this test on both the first run and the re-run: `await_count 0 == 1` on the last assertion, with the log
+line `anchor worker: chain read failed (NOT_CONFIGURED) ... CONTRACT_ADDRESS is not configured`. Hypothesis: the test only passes
+locally because `.env` supplies chain settings.
+**Reproduced before any fix.** A clean `git worktree` of `7ae1218` with **no `.env`**, its own Mongo + RustFS started from that
+worktree's `docker-compose.yml` (so the `minioadmin` defaults CI uses), and only CI's five env vars (`MONGODB_URI`,
+`STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET`): the test fails at the same assertion with
+the same log lines (`chain read failed (NOT_CONFIGURED)`, `permanent failure (NOT_CONFIGURED)`).
+**Cause (from the code, `anchor_confirmer._attempt`).** Step 2 calls `chain.get_onchain_anchor(...)` ("does the chain already
+hold it?") *before* step 4's send. The test patches only `chain.anchor_hash` (the send), so the read is real. On the runner the
+read raises `BlockchainNotConfigured`, the worker records a (correct) failure and never reaches the send. On the owner's machine
+`.env` sets a real Sepolia RPC URL, wallet key and contract address, so the **read goes out to the public network** and returns
+"not anchored"; the test passed by accident, and was network-dependent and slow-ish there. **The re-queue path is not
+buggy**: the worker refused to send because it could not read the chain, which is the intended behaviour.
+**Alternatives**
+- **(a) Stub the chain read (`chain.get_onchain_anchor` -> `{"exists": False}`) next to the existing `anchor_hash` spy.** The
+  test is about the age cutoff and the re-queue, so both chain calls the worker makes on this path are faked, and it needs no
+  chain setting and no network on any machine.
+- **(b) Monkeypatch `CONTRACT_ADDRESS` (and RPC URL / wallet key) to dummy values.** Gets past `NOT_CONFIGURED`, but the read
+  then tries to connect to the dummy RPC and fails as `RPC_UNREACHABLE` (transient): still no send. It would also need a fake
+  chain behind the URL to mean anything.
+- **(c) Run it against the local Hardhat node (`local_chain` fixture).** Hermetic, but heavy (a node process, compiled
+  artifacts) for a test that does not care what the chain holds, and it would no longer count sends through a spy.
+**Decision: (a).** One new patch, scoped to the test. No application code changes. The owner's suggestion to use
+`monkeypatch` for chain settings is satisfied in spirit (the test sets what it needs explicitly rather than inheriting `.env`);
+(a) is preferred over (b) because settings alone cannot make the read succeed.
+**Also checked.** Whole backend suite in the same clean no-`.env` worktree, to find any other test that leans on the owner's
+config; results are recorded below.
+**Outcome of D-047 (test-only change; no application code touched).**
+- With the one-patch fix, the whole `test_anchor_attention.py` file passes in the clean no-`.env` worktree (21 passed).
+- **The whole backend suite in that clean worktree** (no `.env`, CI's five env vars only, Mongo + RustFS from that worktree's
+  compose, Hardhat artifacts linked in from the main checkout): **268 passed, exit 0, coverage 93.8%** (6 min 16 s). So no other
+  test depends on the owner's local config; nothing else needed fixing. The worktree and its containers were removed afterwards.
+- **Limit of this evidence:** the clean run was on Windows, not the runner's Ubuntu 24.04, so it shows the `.env` dependency is
+  gone, not that CI will be green; the second CI failure (D-048, next) is unrelated to this one.
