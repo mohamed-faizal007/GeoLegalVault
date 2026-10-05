@@ -21,6 +21,10 @@ export interface VerificationStats {
   verified: number;
   mismatch: number;
   not_anchored: number;
+  /** D-049; absent from an older server. */
+  anchor_missing?: number;
+  file_missing?: number;
+  chain_unreachable?: number;
   window_days: number;
 }
 

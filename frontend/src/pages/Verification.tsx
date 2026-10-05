@@ -1,40 +1,32 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 
-import { getVerifyHistory, runVerify, type VerificationResult } from "../api/verify";
+import { getVerifyHistory, runVerify } from "../api/verify";
 import ErrorBanner from "../components/ErrorBanner";
 import Spinner from "../components/Spinner";
+import StatusBadge from "../components/StatusBadge";
 import { formatDateTime } from "../lib/format";
+import { reasonText, resultCopy, type ResultCopy, type ResultTone } from "../lib/verification";
 
-const RESULT_STYLES: Record<VerificationResult, string> = {
-  VERIFIED: "bg-emerald-500/10 border-emerald-400/30 text-emerald-200",
-  MISMATCH: "bg-red-500/10 border-red-400/30 text-red-200",
-  NOT_ANCHORED: "bg-white/5 border-white/15 text-ink/90",
+const TONE_BOX: Record<ResultTone, string> = {
+  ok: "bg-emerald-500/10 border-emerald-400/30 text-emerald-200",
+  danger: "bg-red-500/10 border-red-400/30 text-red-200",
+  warn: "bg-amber-500/10 border-amber-400/30 text-amber-100",
+  neutral: "bg-white/5 border-white/15 text-ink/90",
 };
 
-const RESULT_ICON_STYLES: Record<VerificationResult, string> = {
-  VERIFIED: "bg-emerald-500/20 text-emerald-300",
-  MISMATCH: "bg-red-500/20 text-red-300",
-  NOT_ANCHORED: "bg-white/10 text-muted",
+const TONE_ICON: Record<ResultTone, string> = {
+  ok: "bg-emerald-500/20 text-emerald-300",
+  danger: "bg-red-500/20 text-red-300",
+  warn: "bg-amber-500/20 text-amber-300",
+  neutral: "bg-white/10 text-muted",
 };
 
-const RESULT_HEADLINE: Record<VerificationResult, string> = {
-  VERIFIED: "VERIFIED",
-  MISMATCH: "MISMATCH — tamper detected",
-  NOT_ANCHORED: "NOT ANCHORED YET",
-};
-
-const RESULT_ICON_PATH: Record<VerificationResult, string> = {
-  VERIFIED: "m5 13 4 4L19 7",
-  MISMATCH: "M6 6l12 12M18 6 6 18",
-  NOT_ANCHORED: "M6 12h12",
-};
-
-function ResultIcon({ result }: { result: VerificationResult }) {
+function ResultIcon({ copy }: { copy: ResultCopy }) {
   return (
-    <span className={`flex h-12 w-12 items-center justify-center rounded-full ${RESULT_ICON_STYLES[result]}`}>
+    <span className={`flex h-12 w-12 items-center justify-center rounded-full ${TONE_ICON[copy.tone]}`}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
-        <path d={RESULT_ICON_PATH[result]} />
+        <path d={copy.iconPath} />
       </svg>
     </span>
   );
@@ -75,6 +67,7 @@ export default function Verification() {
         onchain: freshResult.onchain,
         txHash: freshResult.tx_hash,
         etherscanUrl: freshResult.etherscan_url,
+        reason: freshResult.reason ?? null,
       }
     : lastRecord
       ? {
@@ -84,8 +77,12 @@ export default function Verification() {
           onchain: lastRecord.onchain_hash,
           txHash: null as string | null,
           etherscanUrl: null as string | null,
+          reason: lastRecord.reason ?? null,
         }
       : null;
+
+  const copy = display ? resultCopy(display.result) : null;
+  const reason = display ? reasonText(display.reason) : null;
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -103,10 +100,15 @@ export default function Verification() {
 
       {verifyMutation.error && <ErrorBanner error={verifyMutation.error} />}
 
-      {display && (
-        <div className={`flex flex-col items-center gap-3 rounded-lg border-2 p-6 text-center shadow-sm ${RESULT_STYLES[display.result]}`}>
-          <ResultIcon result={display.result} />
-          <p className="text-2xl font-bold tracking-wide">{RESULT_HEADLINE[display.result]}</p>
+      {display && copy && (
+        <div
+          role="status"
+          className={`flex flex-col items-center gap-3 rounded-lg border-2 p-6 text-center shadow-sm ${TONE_BOX[copy.tone]}`}
+        >
+          <ResultIcon copy={copy} />
+          <p className="text-2xl font-bold tracking-wide">{copy.headline}</p>
+          <p className="max-w-lg text-sm">{copy.explanation}</p>
+          {reason && <p className="text-xs opacity-90">{reason}</p>}
         </div>
       )}
 
@@ -152,9 +154,12 @@ export default function Verification() {
         {historyQuery.data && historyQuery.data.items.length > 0 && (
           <ul className="divide-y divide-white/10">
             {historyQuery.data.items.map((record) => (
-              <li key={record.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                <span className={`font-medium ${record.result === "VERIFIED" ? "text-emerald-300" : record.result === "MISMATCH" ? "text-red-300" : "text-muted"}`}>
-                  {record.result}
+              <li key={record.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                <span className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={record.result} />
+                  {reasonText(record.reason) && (
+                    <span className="text-xs text-faint">{reasonText(record.reason)}</span>
+                  )}
                 </span>
                 <span className="text-xs text-faint">{formatDateTime(record.created_at)}</span>
               </li>

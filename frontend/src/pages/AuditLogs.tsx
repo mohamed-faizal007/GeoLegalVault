@@ -205,9 +205,11 @@ export default function AuditLogs() {
                       className={`font-medium ${
                         entry.result === "SUCCESS"
                           ? "text-emerald-300"
-                          : entry.result === "DENIED" || entry.result === "MISMATCH" || entry.result === "FAILED"
+                          : ["DENIED", "MISMATCH", "FAILED", "ANCHOR_MISSING", "FILE_MISSING"].includes(entry.result)
                             ? "text-red-300"
-                            : "text-muted"
+                            : ["CHAIN_UNREACHABLE", "STORAGE_UNAVAILABLE"].includes(entry.result)
+                              ? "text-amber-300"
+                              : "text-muted"
                       }`}
                     >
                       {entry.result}

@@ -95,6 +95,20 @@ export default function ReportsPanel() {
         />
         <StatCard label="Not yet anchored" value={verifications_recent.not_anchored} />
         <StatCard
+          label={`Anchor missing (${verifications_recent.window_days}d)`}
+          value={verifications_recent.anchor_missing ?? 0}
+          tone={(verifications_recent.anchor_missing ?? 0) > 0 ? "bad" : "default"}
+        />
+        <StatCard
+          label={`File missing (${verifications_recent.window_days}d)`}
+          value={verifications_recent.file_missing ?? 0}
+          tone={(verifications_recent.file_missing ?? 0) > 0 ? "bad" : "default"}
+        />
+        <StatCard
+          label={`Chain unreachable (${verifications_recent.window_days}d)`}
+          value={verifications_recent.chain_unreachable ?? 0}
+        />
+        <StatCard
           label="Geofence denials (all-time)"
           value={geofence_denied_count}
           tone={geofence_denied_count > 0 ? "bad" : "default"}

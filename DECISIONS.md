@@ -1371,3 +1371,73 @@ bytes + forged hash + `version_no: 99`; never-anchored with edited `version_no` 
 other storage failure; hash mismatch with the chain down; the 17:24/17:25/10:00 sequence (history shows VERIFIED,
 CHAIN_UNREACHABLE, VERIFIED, no NOT_ANCHORED, no flag); clearing refused on an unreachable chain and allowed for `UNCONFIRMED`
 once repaired; no secret in any response/record/audit row. Every chain setting is set explicitly (no `.env`).
+
+### D-050 — REL-04 UI: the three new results, the `UNCONFIRMED` flag, the clear action and the report counts
+**Answers recorded first (asked by the owner after the backend review, no code change needed).**
+- *FILE_MISSING only on a definite not-found.* `storage.is_not_found` (`storage.py:87-92`) is true only for a botocore
+  `ClientError` whose code is `NoSuchKey`, `404` or `NotFound`; `verify/service.py:152` is its only caller on the verify path.
+  Everything else (read/connect timeout, `EndpointConnectionError`, builtin `TimeoutError`/`ConnectionError`, 5xx, `SlowDown`,
+  `AccessDenied`, `NoSuchBucket`) falls through to the 503 branch, which writes no record and sets no flag. Pinned by
+  `test_only_a_definite_not_found_is_file_missing` (ten uncertain failures -> 503, `integrity_flag` stays null, no record,
+  one `VERIFY_STORAGE_UNAVAILABLE` audit row each; three definite not-found forms -> `FILE_MISSING`). Stated consequence:
+  S3-compatible stores that answer 403 for a missing key (no list permission) stay a 503, i.e. conservative.
+- *UNCONFIRMED is informational.* Nothing in `backend/app` reads `integrity_flag` except the document serializer
+  (`documents/service.py:131`) and the clear path (`workflow.py:474`, `service.py:325`). Every transition claims on `status`
+  only (`workflow._claim` -> `claim_status`); `updated_at` is used only as the clear path's compare-and-swap. Pinned by
+  `test_an_unconfirmed_flag_blocks_no_workflow_action` (download, amend, upload V2, submit, review, approve, archive all succeed
+  with the flag set, and it is unchanged at the end). The UI therefore must not disable any action because of it.
+
+**UI decisions**
+1. **Words, not only colour.** Each result has a headline in words, one sentence saying what it means and what was (not)
+   done, and its own icon shape; colour is a third cue. `role="status"` on the result so it is announced. New copy avoids
+   overclaims (Guardrail #6): `ANCHOR_MISSING` and `FILE_MISSING` say "integrity could not be confirmed", not "tampered".
+   - `CHAIN_UNREACHABLE` (amber): "COULD NOT CHECK THE BLOCKCHAIN", "No result: the blockchain could not be read, so this version
+     was neither confirmed nor flagged. Try again later."
+   - `ANCHOR_MISSING` (red): "ANCHOR MISSING", "Our records say this version was anchored, but the blockchain has no matching
+     entry. That can happen if the test network was reset; it means integrity could not be confirmed. The document was flagged
+     for an administrator."
+   - `FILE_MISSING` (red): "STORED FILE MISSING", "The stored file for this version was not found, so it could not be checked.
+     The document was flagged for an administrator."
+   - `NOT_ANCHORED` keeps its headline; its sentence now says the records do not show this version as anchored (FE-04).
+2. **Fixed reason text, never server text.** The backend `reason` is a code. The UI maps the five known codes to fixed
+   sentences and renders *nothing from the response* for an unknown code (a generic "The blockchain could not be read." is
+   used instead). So an unexpected or leaky string cannot reach the page. A test sends a string containing a host and a fake
+   key as `reason` and asserts it is absent from the page text.
+3. **One copy module** `src/lib/verification.ts` (result copy, reason copy, flag copy) used by the page, the document page
+   and the repository list, so wording is defined once and unit-testable.
+4. **History** uses the shared `StatusBadge` (words: underscores become spaces) instead of two hard-coded colours, so every
+   result, old or new, reads in words; a `CHAIN_UNREACHABLE` row also shows its fixed reason sentence.
+5. **Tones (`status.ts`)**: `ANCHOR_MISSING`, `FILE_MISSING` -> danger; `CHAIN_UNREACHABLE` -> warn; `UNCONFIRMED` -> warn.
+   `UNCONFIRMED` is amber, not red: it is "could not confirm", not "proven wrong".
+6. **Document page**: an `UNCONFIRMED` badge next to the status, plus a `role="note"` banner stating what it means and that it
+   does not block anything ("not proof of tampering; this document can still be used; an administrator can clear the flag once a
+   re-verification passes"). The repository list shows the same chip as it does for `TAMPERED`.
+7. **Clear action** is offered for `TAMPERED` **or** `UNCONFIRMED` (Administrators, as today); the panel text is unchanged
+   because it already describes the re-verify-then-clear rule. The server's refusal message (fixed server-side text such as
+   "v1: CHAIN_UNREACHABLE (unable to verify)") is shown by the existing error path.
+8. **Reports**: three more stat cards for the window ("Anchor missing", "File missing", "Chain unreachable"); anchor/file
+   missing turn red when above zero. Counts default to 0 if absent (older server).
+9. **Audit log** colouring: `ANCHOR_MISSING` / `FILE_MISSING` red, `CHAIN_UNREACHABLE` / `STORAGE_UNAVAILABLE` amber; the
+   text of the result is shown as before.
+10. **Types**: `VerificationResult` gains the three values; `recomputed` / `recomputed_hash` become `string | null`; `reason` is
+    `string | null` (optional). The history/hash rows already render a missing hash as "not available".
+
+**Tests (frontend, vitest).** Verification page: each new result shows its headline *and* sentence (text, not class),
+`CHAIN_UNREACHABLE` is not styled or worded as "not anchored", a leaky `reason` never reaches the page, a `null` recomputed hash
+renders, history rows read in words. Document page: `UNCONFIRMED` label and banner, clear offered for `UNCONFIRMED` to an
+Administrator and not to others, nothing else disabled. Reports panel: the new counts. Audit colouring: not tested (cosmetic).
+**Outcome of D-050.**
+- Code: `src/lib/verification.ts` (new copy module), `api/verify.ts`, `lib/status.ts`, `pages/Verification.tsx`,
+  `pages/DocumentDetails.tsx`, `pages/DocumentRepository.tsx`, `pages/AuditLogs.tsx`, `api/reports.ts`, `ReportsPanel.tsx`.
+- Tests added: `Verification.outcomes.test.tsx` (8), `DocumentDetails.unconfirmed.test.tsx` (3), `ReportsPanel.test.tsx` (2),
+  `lib/__tests__/verification.test.ts` (5), plus the two backend proof tests for the owner's questions.
+- **Mutation check (leak test is real):** making `reasonText` return the unknown code instead of the generic sentence turns
+  exactly two tests red (the unit test and the page-level "leaky reason never reaches the page" test); the file was restored
+  byte-for-byte (md5 verified).
+- Frontend: `tsc -b` exit 0, `eslint .` exit 0, `vitest run` exit 0 (19 files, 109 tests), `npm run build` exit 0,
+  `npm audit --omit=dev --audit-level=high` exit 0. Backend with the owner's `.env`: `pytest` exit 0 (293 passed, 93.90%),
+  `ruff check app tests` exit 0.
+- **Stated limits.** The refusal message for a failed clear is the server's own fixed text (for example
+  "v1: CHAIN_UNREACHABLE (unable to verify)"), shown through the existing error path; it is not exception text but it does name
+  the result code. Contrast and screen-reader behaviour of the new banners were not tested with a browser or a screen reader
+  (FE-02 stays open); `role="status"` and the words/icons are the measures taken. Audit-log colouring is untested (cosmetic).

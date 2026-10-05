@@ -19,6 +19,7 @@ import { useAuth } from "../context/useAuth";
 import { getCurrentLocation } from "../hooks/useGeoLocation";
 import { formatDateTime } from "../lib/format";
 import { hasPermission, PERMISSIONS } from "../lib/permissions";
+import { isClearableFlag, UNCONFIRMED_BANNER } from "../lib/verification";
 
 function ActionButton({
   label,
@@ -174,7 +175,7 @@ export default function DocumentDetails() {
   // Backend only archives ACTIVE documents (workflow.archive); SUPERSEDED would 409.
   const canArchive = doc.status === "ACTIVE" && hasPermission(role, PERMISSIONS.DOCUMENT_ARCHIVE);
   const canClearFlag =
-    doc.integrity_flag === "TAMPERED" && hasPermission(role, PERMISSIONS.INTEGRITY_CLEAR);
+    isClearableFlag(doc.integrity_flag) && hasPermission(role, PERMISSIONS.INTEGRITY_CLEAR);
   const canDownload = !!doc.current_version_id && hasPermission(role, PERMISSIONS.DOCUMENT_VIEW);
   const canVerify = !!doc.current_version_id && hasPermission(role, PERMISSIONS.VERIFY_PERFORM);
 
@@ -185,6 +186,7 @@ export default function DocumentDetails() {
           <h1 className="text-2xl font-semibold tracking-tight text-ink">{doc.title}</h1>
           <StatusBadge status={doc.status} />
           {doc.integrity_flag === "TAMPERED" && <StatusBadge status="TAMPERED" />}
+          {doc.integrity_flag === "UNCONFIRMED" && <StatusBadge status="UNCONFIRMED" />}
         </div>
         <p className="mt-0.5 text-sm text-muted">
           {doc.doc_type} — {doc.classification}
@@ -195,6 +197,15 @@ export default function DocumentDetails() {
         <div className="rounded-md border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           A verification run detected that the stored file no longer matches its approved hash.
           See the Verification page for details.
+        </div>
+      )}
+
+      {doc.integrity_flag === "UNCONFIRMED" && (
+        <div
+          role="note"
+          className="rounded-md border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+        >
+          {UNCONFIRMED_BANNER} See the Verification page for details.
         </div>
       )}
 
