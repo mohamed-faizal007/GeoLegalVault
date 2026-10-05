@@ -37,7 +37,11 @@ from tests.integration.test_workflow import (
     _auth,
     _create_fence,
     _create_user_and_login,
+    _geo,
     _get_document,
+    _review_approve,
+    _setup_three_roles,
+    _submit,
     _upload,
 )
 
@@ -351,3 +355,116 @@ async def test_an_unconfirmed_flag_never_downgrades_tampered(
 
     document = await db["documents"].find_one({"_id": ObjectId(document_id)})
     assert document["integrity_flag"] == "TAMPERED"
+
+
+# --- FILE_MISSING fires only on a definite "not found" (D-049) -----------------------------
+
+
+def _client_error(code: str, status: int):
+    from botocore.exceptions import ClientError
+
+    return ClientError(
+        {"Error": {"Code": code, "Message": "x"}, "ResponseMetadata": {"HTTPStatusCode": status}},
+        "GetObject",
+    )
+
+
+@hard_timeout(90)
+async def test_only_a_definite_not_found_is_file_missing(client, db, local_chain, monkeypatch):  # noqa: F811
+    """Timeouts, connection errors, 5xx, throttling, auth and a missing bucket must stay a 503
+    and set no flag; only NoSuchKey / 404 / NotFound is FILE_MISSING."""
+    from botocore.exceptions import ConnectTimeoutError, EndpointConnectionError, ReadTimeoutError
+
+    approver, document_id, version_id, _key = await _activate_document(client, db)
+    uncertain = {
+        "read timeout": ReadTimeoutError(endpoint_url="http://storage.invalid"),
+        "connect timeout": ConnectTimeoutError(endpoint_url="http://storage.invalid"),
+        "connection error": EndpointConnectionError(endpoint_url="http://storage.invalid"),
+        "builtin timeout": TimeoutError("slow"),
+        "builtin connection error": ConnectionError("reset"),
+        "500": _client_error("InternalError", 500),
+        "503": _client_error("ServiceUnavailable", 503),
+        "throttled": _client_error("SlowDown", 503),
+        "access denied": _client_error("AccessDenied", 403),
+        "no such bucket": _client_error("NoSuchBucket", 404),
+    }
+    for label, error in uncertain.items():
+
+        def _fail(_key, error=error):
+            raise error
+
+        monkeypatch.setattr(storage, "get_object", _fail)
+        resp = await _verify(client, approver, version_id)
+        assert resp.status_code == 503, f"{label}: {resp.status_code} {resp.text}"
+        assert resp.json()["error"]["code"] == "STORAGE_UNAVAILABLE", label
+        document = await db["documents"].find_one({"_id": ObjectId(document_id)})
+        assert document["integrity_flag"] is None, f"{label} set a flag"
+        assert await _records(db, version_id) == [], f"{label} wrote a verification record"
+    assert "VERIFY_FILE_MISSING" not in await _actions(db, version_id)
+    assert (await _actions(db, version_id)).count("VERIFY_STORAGE_UNAVAILABLE") == len(uncertain)
+
+    for label, error in {
+        "NoSuchKey": _client_error("NoSuchKey", 404),
+        "404": _client_error("404", 404),
+        "NotFound": _client_error("NotFound", 404),
+    }.items():
+
+        def _gone(_key, error=error):
+            raise error
+
+        monkeypatch.setattr(storage, "get_object", _gone)
+        verdict = (await _verify(client, approver, version_id)).json()["result"]
+        assert verdict == "FILE_MISSING", label
+
+
+# --- UNCONFIRMED is informational: it blocks no workflow action ----------------------------
+
+
+@hard_timeout(180)
+async def test_an_unconfirmed_flag_blocks_no_workflow_action(client, db, local_chain):  # noqa: F811
+    import httpx
+
+    from app.modules.documents import service as documents_service
+    from tests.integration.test_concurrency import _post_amend_upload
+
+    uploader, reviewer, approver = await _setup_three_roles(client, db)
+    upload = await _upload(client, uploader)
+    document_id = upload["document_id"]
+    await _submit(client, uploader, document_id)
+    await _review_approve(client, reviewer, document_id)
+    first = await client.post(
+        f"/api/v1/documents/{document_id}/approve", headers={**_auth(approver), **_geo()}
+    )
+    assert first.json()["status"] == "ACTIVE", first.text
+
+    await documents_service.flag_integrity_unconfirmed(db, ObjectId(document_id))
+
+    async def flag() -> str | None:
+        return (await _get_document(client, approver, document_id))["integrity_flag"]
+
+    assert await flag() == "UNCONFIRMED"
+    download = await client.get(
+        f"/api/v1/documents/{document_id}/download", headers={**_auth(approver), **_geo()}
+    )
+    assert download.status_code == 200, download.text
+    async with httpx.AsyncClient() as raw:
+        assert (await raw.get(download.json()["url"])).content == PDF_BYTES
+    amend = await client.post(
+        f"/api/v1/documents/{document_id}/amend",
+        headers={**_auth(uploader), **_geo()},
+        json={"reason": "fix clause 2"},
+    )
+    assert amend.status_code == 200, amend.text
+    v2 = await _post_amend_upload(client, uploader, document_id, PDF_BYTES + b"-v2")
+    assert v2.status_code == 201, v2.text
+    await _submit(client, uploader, document_id)
+    await _review_approve(client, reviewer, document_id)
+    second = await client.post(
+        f"/api/v1/documents/{document_id}/approve", headers={**_auth(approver), **_geo()}
+    )
+    assert second.status_code == 200 and second.json()["status"] == "ACTIVE", second.text
+    archive = await client.post(
+        f"/api/v1/documents/{document_id}/archive", headers=_auth(approver)
+    )
+    assert archive.status_code == 200 and archive.json()["status"] == "ARCHIVED", archive.text
+    assert await flag() == "UNCONFIRMED"  # still shown, never changed by any of the above
