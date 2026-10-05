@@ -1288,3 +1288,86 @@ never-submitted DRAFT; identical retry on an `ACTIVE` document.
   --no-deps`: exit 0, no known vulnerabilities.
 - Not shown: that CI's Linux runner is green, and that the original `[201, 201, 409]` can no longer occur under real
   scheduling beyond the forced ordering plus the unchanged three-way concurrent test (which passed in both runs here).
+
+## 2026-10-05 — REL-04: verification must not degrade silently
+
+### D-049 — Verify tells "chain unreachable" from "not anchored", flags and audits what it cannot explain, and cannot hang
+**How each outcome is decided today (read from `verify/service.py`, before any change).**
+- Storage: `storage.get_object` raising *anything* -> `503 STORAGE_UNAVAILABLE`. "Object gone" and "storage down" look the same;
+  no record, no audit row.
+- Chain: `get_onchain_anchor(document_id, version_no)` raising *anything* -> replaced by `{"exists": False}` (lines 122-123).
+- Verdict: no on-chain hash -> `NOT_ANCHORED`; else `VERIFIED` only if recomputed == stored == on-chain, otherwise `MISMATCH`.
+  Only `MISMATCH` sets `integrity_flag = TAMPERED`. Audit: `VERIFY_FAIL` / `VERIFY_PASS` / `VERIFY_NOT_ANCHORED` (the catch-all).
+- **The 2026-10-03 17:25 record** ("Contract - Umbrella Logistics (006)", read-only query of the dev DB, nothing written):
+  history VERIFIED 17:24:33, **NOT_ANCHORED 17:25:40**, VERIFIED 2026-10-04 10:00; the version has `anchored: true` and a CONFIRMED
+  anchor row; no flag; audit `VERIFY_NOT_ANCHORED` at 17:25:40. It came from the swallow at lines 122-123 (exception -> `exists:
+  False` -> `onchain_hash None` -> `NOT_ANCHORED`). The stored row cannot by itself tell "the RPC raised" from "the contract
+  said no", which is the defect; here the same `version_no` verified on both sides of it and the RPC was dead.
+- **Why verify hangs (measured, web3 7.6.1, local sockets only):** a refused connection fails in 2.1 s, but a node that accepts
+  and never answers takes **152 s** to raise (30 s default timeout x 5 retries of `eth_call`).
+- **The lookup key is the mutable version row.** `(document_id, version_no)` is read from `document_versions`, and the anchor row
+  stores no `version_no`. Edit `version_no` (R13: bytes + `sha256` + `version_no: 99`) and the chain answers "no such anchor".
+- **A test encodes the bug:** `test_clear_refuses_when_the_chain_cannot_be_read` asserts the refusal says `NOT_ANCHORED`.
+
+**Alternatives**
+- **(A) Minimal:** add only `CHAIN_UNREACHABLE` and a bounded timeout. Fixes the 17:25 case, leaves the key-edit/reset hole: an
+  anchored version whose anchor "vanished" is still a grey `NOT_ANCHORED`.
+- **(B) A + `ANCHOR_MISSING` and `FILE_MISSING` with a flag and audit.** The chain *answered* "no" but the database itself says
+  the version was anchored (`anchored`, a CONFIRMED anchor row, or a post-anchor status) -> red result, flag, audit. Chain
+  *unreachable* -> amber, audited, never a verdict.
+- **(C) B + derive the key from the anchor's tx input (chain-derived), and/or a reconciliation job scanning `AnchorCreated` events
+  (REL-04 options (c)/(b)).** (c) needs a tx hash (adopted rows have none) and an extra RPC; (b) is a new worker duty (Guardrail
+  #10 interpretation) and a larger change. **Deferred, not dropped** (see Limits).
+- Flag vocabulary for the new red results: **(i) reuse `TAMPERED`** (no UI/clear changes, but a testnet reset or a lost object
+  would be labelled "tampered", an overstatement in the spirit of Guardrail #6) or **(ii) a new flag value `UNCONFIRMED`**
+  ("integrity could not be confirmed"), clearable by the same D-025 rule. **(ii) chosen.**
+- "Contract returns nothing": treat the empty/undecodable `eth_call` as "no answer", or check `eth_getCode`? A redeployed/reset
+  chain has no code at `CONTRACT_ADDRESS`, so the call returns `0x`; that is *definitive* (the anchor is gone), whereas an
+  empty reply from a node that does have the code is not. **Check `eth_getCode`** (one extra read, only on that failure path).
+
+**Decision: (B)**, with flag (ii) and the `eth_getCode` check. Outcome table (`claims` = the DB says this version was anchored:
+`version.anchored`, or version status in {BLOCKCHAIN_ANCHORED, ACTIVE, SUPERSEDED}, or a CONFIRMED anchor row; `local_ok` =
+recomputed == stored):
+
+| chain says | claims | local_ok | result | flag | audit action |
+|---|---|---|---|---|---|
+| anchor exists, equal hashes | any | yes | `VERIFIED` | - | `VERIFY_PASS` |
+| anchor exists, other hash | any | any | `MISMATCH` | `TAMPERED` | `VERIFY_FAIL` |
+| exists = false (or contract not deployed) | no | any | `NOT_ANCHORED` | - | `VERIFY_NOT_ANCHORED` |
+| exists = false (or contract not deployed) | yes | yes | **`ANCHOR_MISSING`** | `UNCONFIRMED` | **`VERIFY_ANCHOR_MISSING`** |
+| exists = false (or contract not deployed) | yes | no | `MISMATCH` (file != recorded hash) | `TAMPERED` | `VERIFY_FAIL` |
+| RPC error / timeout / not configured / bad reply | yes | no | `MISMATCH` (needs no chain) | `TAMPERED` | `VERIFY_FAIL` |
+| RPC error / timeout / not configured / bad reply | otherwise | - | **`CHAIN_UNREACHABLE`** | none | **`VERIFY_CHAIN_UNREACHABLE`** |
+| object authoritatively not found | any | n/a | **`FILE_MISSING`** | `UNCONFIRMED` | **`VERIFY_FILE_MISSING`** |
+| any other storage failure | any | n/a | HTTP 503 `STORAGE_UNAVAILABLE` (as before) | none | **`VERIFY_STORAGE_UNAVAILABLE`** |
+
+Details fixed by this decision:
+- `UNCONFIRMED` is set only if the document has no flag (it never downgrades `TAMPERED`); `MISMATCH` still overrides.
+- Responses and records gain an additive `reason` (a fixed code: `RPC_UNREACHABLE`, `CHAIN_TIMEOUT`, `NOT_CONFIGURED`,
+  `CONTRACT_NOT_DEPLOYED`, `CHAIN_READ_FAILED`), never exception text, so an RPC URL with a key cannot leak (Guardrail #2, D-020).
+  `recomputed` becomes nullable (`FILE_MISSING` has no bytes). `result` gains the three new values. HTTP status stays 200: the
+  verification ran and produced a verdict ("could not verify" is a result, and is recorded).
+- **Bounded read.** New setting `CHAIN_READ_TIMEOUT_SEC` (default 10). `get_onchain_anchor` uses its own read-only `Web3` (HTTP
+  timeout = the setting, **no retries**) and an outer `asyncio.wait_for` deadline, and raises a timeout error. The shared signing
+  `Web3` and the anchor/send path are untouched. The worker and `/blockchain/anchor` also use this read and become bounded.
+  Not changed: the synchronous storage call (REL-05).
+- **D-025 clearing:** accepts `TAMPERED` or `UNCONFIRMED`; still clears only if every anchored version re-verifies to exactly
+  `VERIFIED`. `CHAIN_UNREACHABLE` is "unable to verify" in the refusal text and audit meta, never a pass.
+- `reports` gains additive counts for the three new results so they are not silently absent from the summary.
+- The one existing test that asserts `NOT_ANCHORED` for an unreachable chain is changed to the new, correct result; that is the
+  intended behaviour change, not a loosened check.
+- No transaction is sent anywhere in this change; the dev database is not written (tests use the throwaway test DB and a local
+  Hardhat node).
+
+**Limits (stated, not claimed away).** (1) An attacker who edits `version_no` *and* clears every "claims anchored" signal
+(`anchored`, status, and deletes/changes the CONFIRMED anchor row) still gets a grey `NOT_ANCHORED`; closing that needs
+(b)/(c) above and remains open under REL-04. (2) `UNCONFIRMED` after a chain reset is a true statement ("could not be
+confirmed"), not a proof of tampering; recovery tooling is BC-02. (3) During an outage verification of an anchored, unmodified
+file stays inconclusive; nothing in this change can make it conclusive without the chain.
+
+**Test plan (written first, shown failing on the pre-change code, hard timeouts on every one).** Chain refused; chain accepts but
+never answers (a local blackhole socket) bounded; contract has no code; anchored version with edited `version_no`; the R13 forged
+bytes + forged hash + `version_no: 99`; never-anchored with edited `version_no` stays `NOT_ANCHORED`; stored file missing;
+other storage failure; hash mismatch with the chain down; the 17:24/17:25/10:00 sequence (history shows VERIFIED,
+CHAIN_UNREACHABLE, VERIFIED, no NOT_ANCHORED, no flag); clearing refused on an unreachable chain and allowed for `UNCONFIRMED`
+once repaired; no secret in any response/record/audit row. Every chain setting is set explicitly (no `.env`).

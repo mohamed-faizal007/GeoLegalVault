@@ -465,13 +465,13 @@ async def clear_integrity_flag(
     actor: dict[str, Any],
     reason: str,
 ) -> list[int]:
-    """Admin-only, audited removal of a TAMPERED flag (D-025). It cannot be
+    """Admin-only, audited removal of a TAMPERED or UNCONFIRMED flag (D-025, D-049). It cannot be
     used to hide a real mismatch: every anchored version is re-verified now,
     through the real 3-way verification, and the flag is cleared only if all
     of them return VERIFIED. Returns the version numbers that were verified."""
     from app.modules.verify import service as verify_service  # avoids an import cycle
 
-    if document.get("integrity_flag") != "TAMPERED":
+    if document.get("integrity_flag") not in documents_service.CLEARABLE_INTEGRITY_FLAGS:
         raise NotFlagged("this document has no integrity flag to clear")
 
     document_id = document["_id"]
@@ -504,8 +504,11 @@ async def clear_integrity_flag(
             result="REFUSED",
             meta={"reason": reason, "failing": failing},
         )
+        # "Could not check" is spelled out so it is never read as a pass or as a verdict (D-049).
+        could_not_check = {"UNVERIFIABLE", "CHAIN_UNREACHABLE"}
         summary = ", ".join(
-            f"v{f['version_no']}: {f['result']}" if f["version_no"] else f["result"]
+            (f"v{f['version_no']}: {f['result']}" if f["version_no"] else f["result"])
+            + (" (unable to verify)" if f["result"] in could_not_check else "")
             for f in failing
         )
         raise IntegrityStillFailing(

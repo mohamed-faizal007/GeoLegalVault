@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # Local dev node used only for /health reachability probing (Phase 5 adds
     # real Hardhat + anchoring). Distinct from SEPOLIA_RPC_URL, the real testnet RPC.
     CHAIN_RPC_URL: str = "http://localhost:8545"
+    # Upper bound, in seconds, on one on-chain READ (verify, the anchor worker's "already
+    # anchored?" check): HTTP timeout, no retries. web3's own default is 30 s x 5 retries, which
+    # let a stuck RPC hold a verify request for 150+ s (REL-04, D-049). Reads only: sends keep
+    # their own retry behaviour.
+    CHAIN_READ_TIMEOUT_SEC: float = 10.0
     # Approval-time anchoring (Phase 6): how many times to retry sending the
     # anchor tx if it fails outright (RPC down/etc.), and how long to poll
     # for a synchronous confirmation before leaving the anchor PENDING for a

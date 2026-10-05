@@ -186,7 +186,8 @@ async def test_clear_refuses_when_the_chain_cannot_be_read(
 
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "INTEGRITY_STILL_FAILING"
-    assert "NOT_ANCHORED" in resp.json()["error"]["message"]
+    # Unable to reach the chain is "could not verify", not "not anchored" (D-049).
+    assert "CHAIN_UNREACHABLE" in resp.json()["error"]["message"]
     doc = await db["documents"].find_one({"_id": ObjectId(document_id)})
     assert doc["integrity_flag"] == "TAMPERED"
 

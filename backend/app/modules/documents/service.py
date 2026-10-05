@@ -293,6 +293,20 @@ async def claim_status(
     )
 
 
+# Flags an Administrator may clear, through the same re-verification rule (D-025, D-049).
+CLEARABLE_INTEGRITY_FLAGS = ("TAMPERED", "UNCONFIRMED")
+
+
+async def flag_integrity_unconfirmed(db: AsyncIOMotorDatabase, document_id: ObjectId) -> bool:
+    """Sets `UNCONFIRMED` only on a document with no flag, so it never downgrades or replaces
+    `TAMPERED` (and a repeat verify does not touch `updated_at`). D-049."""
+    result = await db[DOCUMENTS_COLLECTION].update_one(
+        {"_id": document_id, "integrity_flag": None},
+        {"$set": {"integrity_flag": "UNCONFIRMED", "updated_at": datetime.now(UTC)}},
+    )
+    return result.modified_count == 1
+
+
 async def clear_integrity_flag(
     db: AsyncIOMotorDatabase,
     document_id: ObjectId,
@@ -301,14 +315,14 @@ async def clear_integrity_flag(
     cleared_by: ObjectId,
     reason: str,
 ) -> bool:
-    """Clears TAMPERED only if the document is still flagged and untouched
+    """Clears TAMPERED/UNCONFIRMED only if the document is still flagged and untouched
     since `expected_updated_at` (D-025) — so a mismatch recorded or a
     transition made while the caller was re-verifying is never overwritten."""
     now = datetime.now(UTC)
     result = await db[DOCUMENTS_COLLECTION].update_one(
         {
             "_id": document_id,
-            "integrity_flag": "TAMPERED",
+            "integrity_flag": {"$in": list(CLEARABLE_INTEGRITY_FLAGS)},
             "updated_at": expected_updated_at,
         },
         {

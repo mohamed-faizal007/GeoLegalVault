@@ -81,6 +81,17 @@ def put_object(data: bytes, key: str, content_type: str) -> None:
     )
 
 
+_NOT_FOUND_CODES = {"404", "NoSuchKey", "NotFound"}
+
+
+def is_not_found(exc: BaseException) -> bool:
+    """True only for an authoritative "no such object" answer from the store (not an outage)."""
+    return (
+        isinstance(exc, ClientError)
+        and exc.response.get("Error", {}).get("Code") in _NOT_FOUND_CODES
+    )
+
+
 def object_exists(key: str) -> bool:
     """HEAD only (no body read). True/False only for an authoritative answer: a 404 /
     NoSuchKey is False; any other failure (outage, auth) raises, so a caller can never
@@ -88,7 +99,7 @@ def object_exists(key: str) -> bool:
     try:
         get_client().head_object(Bucket=get_settings().STORAGE_BUCKET, Key=key)
     except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+        if is_not_found(exc):
             return False
         raise
     return True

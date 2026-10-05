@@ -136,7 +136,8 @@ check).
 | `recomputed_hash` | string |
 | `stored_hash` | string |
 | `onchain_hash` | string \| null |
-| `result` | `VERIFIED \| MISMATCH \| NOT_ANCHORED` |
+| `result` | `VERIFIED \| MISMATCH \| NOT_ANCHORED \| ANCHOR_MISSING \| FILE_MISSING \| CHAIN_UNREACHABLE` (D-049) |
+| `reason` | string \| null — a fixed code for a chain read that failed (e.g. `CHAIN_TIMEOUT`); absent on older rows |
 | `created_at` | datetime |
 
 **Indexes:** `{version_id, created_at desc}`.
@@ -145,7 +146,7 @@ check).
 | Field | Type | Notes |
 |---|---|---|
 | `actor_id` | ObjectId \| string | usually a user id; `"SYSTEM"` for system-triggered actions (e.g. `ANCHOR_OK`), or a raw email for a pre-authentication failed login |
-| `action` | string | `LOGIN_SUCCESS/FAILURE, GEOFENCE_DENIED, UPLOAD, SUBMIT, REVIEW_*, APPROVE, ANCHOR_OK/ANCHOR_FAIL, AMEND_REQ, ARCHIVE, VERIFY_PASS/VERIFY_FAIL/VERIFY_NOT_ANCHORED, …` |
+| `action` | string | `LOGIN_SUCCESS/FAILURE, GEOFENCE_DENIED, UPLOAD, SUBMIT, REVIEW_*, APPROVE, ANCHOR_OK/ANCHOR_FAIL, AMEND_REQ, ARCHIVE, VERIFY_PASS/VERIFY_FAIL/VERIFY_NOT_ANCHORED/VERIFY_ANCHOR_MISSING/VERIFY_FILE_MISSING/VERIFY_CHAIN_UNREACHABLE/VERIFY_STORAGE_UNAVAILABLE, …` |
 | `target_type`, `target_id` | string, ObjectId \| string | |
 | `result` | string | `SUCCESS \| FAILED \| MISMATCH \| ...` |
 | `ip` | string \| null | |

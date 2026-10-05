@@ -69,6 +69,9 @@ async def get_summary(db: AsyncIOMotorDatabase) -> ReportsSummary:
         verified=verify_counts.get(VerificationResult.VERIFIED.value, 0),
         mismatch=verify_counts.get(VerificationResult.MISMATCH.value, 0),
         not_anchored=verify_counts.get(VerificationResult.NOT_ANCHORED.value, 0),
+        anchor_missing=verify_counts.get(VerificationResult.ANCHOR_MISSING.value, 0),
+        file_missing=verify_counts.get(VerificationResult.FILE_MISSING.value, 0),
+        chain_unreachable=verify_counts.get(VerificationResult.CHAIN_UNREACHABLE.value, 0),
         window_days=VERIFICATIONS_WINDOW_DAYS,
     )
 

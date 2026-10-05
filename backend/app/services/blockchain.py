@@ -16,11 +16,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+import requests
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 from web3 import Web3
 from web3.contract import Contract
-from web3.exceptions import TransactionNotFound
+from web3.exceptions import BadFunctionCallOutput, TransactionNotFound
 from web3.types import TxParams
 
 from app.core.config import get_settings
@@ -35,6 +36,15 @@ _w3: Web3 | None = None
 class BlockchainNotConfigured(Exception):
     """SEPOLIA_RPC_URL / SERVICE_WALLET_PRIVATE_KEY / CONTRACT_ADDRESS are
     still placeholders — expected until the manual deploy step is done."""
+
+
+class ChainReadTimeout(TimeoutError):
+    """An on-chain read did not finish within CHAIN_READ_TIMEOUT_SEC (D-049)."""
+
+
+class ContractNotDeployed(Exception):
+    """The node answered, but there is no contract code at CONTRACT_ADDRESS (a reset or
+    redeployed chain). Definitive: an anchor cannot exist there (D-049)."""
 
 
 def _is_placeholder(value: str) -> bool:
@@ -105,14 +115,56 @@ async def anchor_hash(document_id: str, version: int, sha256_hex: str, event_typ
     return "0x" + tx_hash.hex().removeprefix("0x")
 
 
+def _read_contract(timeout: float) -> tuple[Web3, Contract]:
+    """A read-only Web3 + contract with a bounded HTTP timeout and no retries (web3 7's
+    default is 30 s x 5 on eth_call). Separate from the shared signing client on purpose:
+    the send path is not changed by the read bound (D-049). Built per call; cheap."""
+    settings = get_settings()
+    if _is_placeholder(settings.CONTRACT_ADDRESS):
+        raise BlockchainNotConfigured("CONTRACT_ADDRESS is not configured")
+    if _is_placeholder(settings.SEPOLIA_RPC_URL):
+        raise BlockchainNotConfigured("SEPOLIA_RPC_URL is not configured")
+    w3 = Web3(
+        Web3.HTTPProvider(
+            settings.SEPOLIA_RPC_URL,
+            request_kwargs={"timeout": timeout},
+            exception_retry_configuration=None,
+        )
+    )
+    address = Web3.to_checksum_address(settings.CONTRACT_ADDRESS)
+    return w3, w3.eth.contract(address=address, abi=_ABI)
+
+
 async def get_onchain_anchor(document_id: str, version: int) -> dict[str, Any]:
     """Reads the contract's mapping directly — the ground truth used by the
     3-way verification loop (Phase 7), independent of whatever this app's
-    own database says."""
-    contract = get_contract()
-    hash_bytes, event_type, ts, exists = await asyncio.to_thread(
-        contract.functions.getAnchor(document_id, version).call
-    )
+    own database says.
+
+    Bounded by CHAIN_READ_TIMEOUT_SEC. Raises ChainReadTimeout (stuck node),
+    ContractNotDeployed (the node has no code at the address: definitive), or the
+    underlying error (unreachable, undecodable reply). Callers must treat an exception as
+    "could not read", never as "not anchored" (D-049)."""
+    timeout = get_settings().CHAIN_READ_TIMEOUT_SEC
+    w3, contract = _read_contract(timeout)
+
+    def _read() -> tuple[bytes, int, int, bool]:
+        try:
+            return contract.functions.getAnchor(document_id, version).call()
+        except BadFunctionCallOutput:
+            # An empty/undecodable reply is "no answer" unless the address holds no code at
+            # all, which is a definitive "no anchor can be here".
+            if not w3.eth.get_code(contract.address):
+                raise ContractNotDeployed("no contract code at CONTRACT_ADDRESS") from None
+            raise
+
+    try:
+        # The deadline is a backstop: the HTTP timeout normally fires first. It does not
+        # cover a thread that is still running; that one ends on its own HTTP timeout.
+        hash_bytes, event_type, ts, exists = await asyncio.wait_for(
+            asyncio.to_thread(_read), timeout=timeout + 1.0
+        )
+    except (TimeoutError, requests.exceptions.Timeout):
+        raise ChainReadTimeout("on-chain read timed out") from None
     return {
         "hash": "0x" + hash_bytes.hex().removeprefix("0x"),
         "event_type": event_type,

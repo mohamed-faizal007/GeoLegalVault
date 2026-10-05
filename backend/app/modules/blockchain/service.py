@@ -233,6 +233,17 @@ async def create_adopted_anchor(
     return doc
 
 
+async def has_confirmed_anchor(db: AsyncIOMotorDatabase, version_id: ObjectId) -> bool:
+    """True if this version has a CONFIRMED anchor row: one of the database's own claims
+    that the chain should hold it (D-049)."""
+    return (
+        await db[BLOCKCHAIN_ANCHORS_COLLECTION].count_documents(
+            {"version_id": version_id, "status": AnchorStatus.CONFIRMED.value}, limit=1
+        )
+        > 0
+    )
+
+
 async def get_latest_anchor_for_version(
     db: AsyncIOMotorDatabase, version_id: str
 ) -> dict[str, Any] | None:

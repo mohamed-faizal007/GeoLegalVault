@@ -24,6 +24,10 @@ class VerificationStats(BaseModel):
     verified: int
     mismatch: int
     not_anchored: int
+    # D-049: additive; older clients ignore them.
+    anchor_missing: int = 0
+    file_missing: int = 0
+    chain_unreachable: int = 0
     window_days: int
 
 

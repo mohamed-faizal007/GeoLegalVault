@@ -28,6 +28,10 @@ ANCHOR_FAILED = "ANCHOR_FAILED"
 TX_DROPPED = "TX_DROPPED"
 RETRIES_EXHAUSTED = "RETRIES_EXHAUSTED"
 STORED_OBJECT_MISSING = "STORED_OBJECT_MISSING"
+# D-049: reasons for a verify that could not read the chain; never raw exception text.
+CHAIN_TIMEOUT = "CHAIN_TIMEOUT"
+CONTRACT_NOT_DEPLOYED = "CONTRACT_NOT_DEPLOYED"
+CHAIN_READ_FAILED = "CHAIN_READ_FAILED"
 
 KNOWN_ERROR_CODES = frozenset(
     {
@@ -72,6 +76,25 @@ def classify_anchor_error(exc: BaseException) -> str:
     ):
         return RPC_UNREACHABLE
     return ANCHOR_FAILED
+
+
+def classify_chain_read_error(exc: BaseException) -> str:
+    """Fixed code for a failed on-chain READ (verify, D-049). Class-based on purpose: the
+    text of these errors can embed the RPC URL and its key, and is never inspected for
+    meaning or returned."""
+    class_names = {cls.__name__ for cls in type(exc).__mro__}
+    if "ContractNotDeployed" in class_names:
+        return CONTRACT_NOT_DEPLOYED
+    if "BlockchainNotConfigured" in class_names:
+        return NOT_CONFIGURED
+    if isinstance(exc, TimeoutError) or class_names & {"Timeout", "ChainReadTimeout"}:
+        return CHAIN_TIMEOUT
+    if isinstance(exc, ConnectionError) or class_names & {
+        "ConnectionError",
+        "ProviderConnectionError",
+    }:
+        return RPC_UNREACHABLE
+    return CHAIN_READ_FAILED
 
 
 def public_error(stored: str | None) -> str | None:

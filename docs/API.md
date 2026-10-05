@@ -88,8 +88,18 @@ POST /api/v1/verify/{version_id}
 200 {"result": "VERIFIED",  "recomputed": "a1b2...", "stored": "a1b2...", "onchain": "a1b2...", "tx_hash": "0x...", "etherscan_url": "https://sepolia.etherscan.io/tx/0x..."}
 200 {"result": "MISMATCH",  "recomputed": "zz99...", "stored": "a1b2...", "onchain": "a1b2...", "tx_hash": "0x...", "etherscan_url": "..."}
 200 {"result": "NOT_ANCHORED", "recomputed": "a1b2...", "stored": "a1b2...", "onchain": null, "tx_hash": null, "etherscan_url": null}
+200 {"result": "ANCHOR_MISSING", "recomputed": "a1b2...", "stored": "a1b2...", "onchain": null, "reason": "CONTRACT_NOT_DEPLOYED", ...}
+200 {"result": "CHAIN_UNREACHABLE", "recomputed": "a1b2...", "stored": "a1b2...", "onchain": null, "reason": "CHAIN_TIMEOUT", ...}
+200 {"result": "FILE_MISSING", "recomputed": null, "stored": "a1b2...", "onchain": null, ...}
 ```
-`MISMATCH` is a `200`, not an error — it's a successful check that found tampering.
+`MISMATCH` is a `200`, not an error — it's a successful check that found tampering. So are the three results
+above (D-049, REL-04): `CHAIN_UNREACHABLE` means the chain could not be read (a fixed `reason` code, never error text):
+there is **no verdict**, it is not "not anchored", and the document is not flagged. `ANCHOR_MISSING` means the database says
+the version was anchored but the chain answered "no" (or has no contract at the address); `FILE_MISSING` means the stored
+object is gone. Both flag the document `UNCONFIRMED` (never over a `TAMPERED` flag) and are audited. `NOT_ANCHORED` is only
+for a version the database itself does not claim was anchored. The on-chain read is bounded by `CHAIN_READ_TIMEOUT_SEC`
+(default 10 s). Any other storage failure is still a `503 STORAGE_UNAVAILABLE`, and is now audited as
+`VERIFY_STORAGE_UNAVAILABLE`.
 
 ### Example: clear a TAMPERED flag (administrator only)
 
