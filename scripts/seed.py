@@ -29,6 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
+from app.core.clearance import PROPOSED_ROLE_CLEARANCE  # noqa: E402
 from app.core.db import close_client, ensure_indexes, get_database  # noqa: E402
 from app.modules.documents import service as documents_service  # noqa: E402
 from app.modules.documents import workflow as documents_workflow  # noqa: E402
@@ -58,7 +59,14 @@ HQ_OUTSIDE_POINT = {"lat": 11.00, "lng": 77.00}  # ~100km away — clearly outsi
 
 
 async def _create_user_if_absent(
-    db, *, email: str, password: str, name: str, role: Role, geofence_ids: list[str] | None = None
+    db,
+    *,
+    email: str,
+    password: str,
+    name: str,
+    role: Role,
+    geofence_ids: list[str] | None = None,
+    clearance: str | None = None,
 ):
     if await get_user_by_email(db, email) is not None:
         print(f"User '{email}' already exists — skipping.")
@@ -71,9 +79,11 @@ async def _create_user_if_absent(
             name=name,
             role=role,
             assigned_geofence_ids=geofence_ids or [],
+            # SEC-02 / D-051: a starting clearance by role; an administrator adjusts it later.
+            clearance=clearance or PROPOSED_ROLE_CLEARANCE.get(role.value, "PUBLIC"),
         ),
     )
-    print(f"Created {role.value} user: {user.email} ({user.id})")
+    print(f"Created {role.value} user: {user.email} ({user.id}), clearance {user.clearance}")
     return user
 
 

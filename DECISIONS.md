@@ -1441,3 +1441,148 @@ Administrator and not to others, nothing else disabled. Reports panel: the new c
   "v1: CHAIN_UNREACHABLE (unable to verify)"), shown through the existing error path; it is not exception text but it does name
   the result code. Contrast and screen-reader behaviour of the new banners were not tested with a browser or a screen reader
   (FE-02 stays open); `role="status"` and the words/icons are the measures taken. Audit-log colouring is untested (cosmetic).
+
+## 2026-10-05 — SEC-02: document-level access control
+
+### D-051 — Classification levels checked against a per-user clearance, enforced in one place, deny-by-default
+**How it works today (read-only, from the code and your dev DB; nothing changed).**
+- **Storage.** `documents.classification` is a plain string copied from the upload form (`documents/router.py:135`,
+  `service.py:171`). It is required to be *present* but not validated: any text, including the empty string, any length up to the
+  body cap, is accepted. The upload page (`Upload.tsx:64-70`) is a free-text box with the placeholder "e.g. RESTRICTED". No
+  endpoint changes it afterwards (there is no PATCH on documents; the amend upload's `classification` form field is read and
+  ignored). Your dev DB: 45 documents: `RESTRICTED` 15, `PUBLIC` 11, `INTERNAL` 9, `CONFIDENTIAL` 9, and one lowercase
+  `restricted` (the free-text slip). No `TOP_SECRET`. The plan says "Classification labels enforced by RBAC"
+  (`GeoLegalVault_Project_Plan.md:154`), so enforcing it is in scope, not new scope (Guardrail #12).
+- **Nothing reads it.** `grep classification backend/app` finds only the write, the serializer and the schema.
+- **Who sees what today.** Every role (all five) holds `document:view`, `document:search` (the `$text` index on title + tags)
+  and `verify:perform`. So any logged-in role: lists and counts every document (`GET /documents`, so the Dashboard totals and
+  queues), opens any (`GET /documents/{id}`), lists its versions (hashes, storage keys, uploader), downloads it (a pre-signed URL,
+  only the geofence stands in the way, which is location policy and not access control, Guardrail #6), runs and reads the history of
+  verification for any version id (this returns the document's SHA-256 and the on-chain hash), and can submit/review/approve/amend/
+  archive by id if the role allows it. Legal Officer, Auditor, Administrator (`anchor:view`) also read any anchor record
+  (`GET /blockchain/anchor/{version_id}`: tx hash, hash, contract) and the stuck-anchor list, which returns **titles**
+  (`blockchain/retry.py:403`). Auditor and Administrator (`audit:view`) read the whole audit log: actor, action, target id, IP,
+  location and **`meta`**, which for a review decision holds the reviewer's free-text `comment` (`workflow.py:200`) and for a
+  flag clear the written reason. Auditor and Administrator also read `GET /reports/summary`: counts by status and type for all
+  documents, plus verification and anchor counts.
+
+**Alternatives, per question**
+1. *Classification values.* (a) **Fixed ordered levels** `PUBLIC < INTERNAL < CONFIDENTIAL < RESTRICTED < TOP_SECRET`, validated
+   on upload (exact value; an unknown one is `422 INVALID_CLASSIFICATION`), chosen in the UI from a list. The four values in use
+   plus the one you named. (b) Free text with a lookup table: no, it is the current hole. (c) Per-tenant configurable levels:
+   scope creep. **Chosen (a).** Immutable after upload: no reclassify endpoint is added (Guardrail #12); a document that needs a
+   different level is a new document. Amend ignores the form's classification as today but now **rejects a different one**
+   (`422 CLASSIFICATION_IMMUTABLE`) so a downgrade attempt is an error and is audited, not silently dropped.
+   *Existing documents:* exact matches stay; a case difference is normalised (`restricted` -> `RESTRICTED`); **anything else is
+   not guessed**: it is listed in a dry-run and left unchanged until you choose a mapping. Meanwhile a document whose value is
+   not a level is **hidden from every role** (deny by default) and still counted nowhere.
+2. *The rule.* (a) **A clearance level per user** (`users.clearance`, one of the same levels): a document is visible to a user
+   iff `clearance >= classification`. (b) A level per role: coarse, and a fixed role ceiling cannot say "this Legal Officer
+   works on the TOP_SECRET matter and that one does not". (c) Per-document access lists / matters (the audit's option (a)):
+   the right model for ethical walls between clients, but a sharing UI, membership admin and a join in every query: a large
+   change, **not done here and not ruled out**; (a) is the layer it would sit on. (d) Assigned geofence as access control: **no**.
+   Geofencing is policy and spoofable (Guardrail #6); it stays a location check. **Chosen (a)**, deny-by-default: no clearance
+   or an unknown one is `PUBLIC`. The user row is loaded on every request, so a change applies on the next request.
+   - *Setting it.* Administrator only (`users:manage`), set in the create/edit user form, audited (`USER_UPDATE` with old and new).
+     **An administrator cannot change their own clearance** (`403 SELF_CLEARANCE_CHANGE`), so no one can grant themselves
+     TOP_SECRET; another administrator must. A lone administrator is set out-of-band (seed / the migration script).
+   - *Uploading.* You can only upload at or below your own clearance (`403 CLASSIFICATION_NOT_ALLOWED`), so nobody creates
+     something they could not then read.
+3. *404 or 403.* **404 `Document not found` (the same body as a nonexistent id)** for a document above your clearance, on every
+   read and every action; **403** stays for "your role lacks the permission", which says nothing about any document. Lists and
+   searches simply omit the document. The refused attempt is audited as `ACCESS_DENIED` (target = that document, endpoint in `meta`)
+   **only when the document exists**, so it is invisible to the caller and cannot be used to probe or to flood the log with
+   made-up ids. Order is unchanged (Guardrail #5): JWT -> RBAC -> geofence -> validation -> **clearance check (inside the single
+   document loader)** -> action -> audit; a pre-signed URL is generated only after the check.
+4. *One enforcement point.* New `documents/access.py`: `Clearance` ordering, `can_view(user, document)`,
+   `visible_classifications(user)` (for list/count/aggregation filters), and `load_visible_document(db, user, id)` which every
+   route that takes a document or version id uses (documents, versions, verify, history, blockchain anchor, retry, workflow
+   actions). A test **enumerates every route that has a `document_id`/`version_id` path parameter** and calls it as an uncleared
+   user expecting never-2xx, so a future endpoint that forgets the check fails the build.
+5. *Where the hole would otherwise remain*
+   - **Search and counts:** the `classification $in visible levels` filter is part of the query, so `total`, the Dashboard counts
+     and `$text` hits only ever include visible documents. Reports: counts by status/type, verification counts and anchor counts
+     are computed over visible documents only, with no "N hidden" hint (a number would itself reveal existence).
+   - **Version history, verify, history of verify, anchor record:** resolved through the version's document, same 404.
+   - **Stuck-anchor list:** an operational alert, kept visible to those with `anchor:view`, but the **title is replaced by
+     "Restricted document"** above the viewer's clearance; re-queue remains an `anchor:retry` request (never contacts the chain,
+     Guardrail #3) so an administrator can unstick an anchor they cannot read.
+   - **Audit log:** see 6.
+6. *Auditors and administrators (plain statement).*
+   - **Auditor:** keeps `audit:view`. Sees **every** audit row (who, what action, when, from where, which id and result), so
+     oversight of access to TOP_SECRET material is not blinded. For rows whose target is a document or version **above the
+     auditor's clearance** the row's `meta` is blanked (it can hold review comments, reasons, tx data) and marked redacted. Does
+     **not** read, list, count, download or verify documents above their clearance. An auditor who must see complete numbers or
+     content needs that clearance granted by an administrator, and that grant is itself audited.
+   - **Administrator:** manages users, geofences, system health and operations. Has **no automatic read access** to document
+     content: reading, archiving, flag-clearing and verifying a document require clearance like anyone else; the clearance an
+     administrator is given is a choice made by *another* administrator. Keeps the stuck-anchor list and re-queue (titles
+     redacted), user/geofence management, and the audit log (same redaction as the auditor).
+   - Proposed starting clearances for the existing dev users (to be confirmed in the dry-run, not applied automatically):
+     Administrator `INTERNAL`, Authorized Staff `CONFIDENTIAL`, Legal Officer, Reviewing Officer and Auditor `RESTRICTED`.
+     **Nobody is given `TOP_SECRET` by default.** New users created through the API default to `PUBLIC` until an administrator
+     sets a level.
+7. *Maker-checker.* Unchanged and unaffected: `enforce_maker_checker` still compares uploader and actor. The reviewer and approver
+   must additionally be cleared for the document, which is intended: a document nobody cleared cannot be reviewed. A test covers a
+   TOP_SECRET document: an uncleared reviewer gets 404, a cleared one can review, the uploader still cannot approve their own.
+
+**Also decided.**
+- Existing documents are not changed by deploying this code. A script (`scripts/classification_migration.py`) **dry-runs by
+  default and lists** which documents would be normalised, which values it will not guess, and which users would get which
+  clearance; `--apply` is separate and I will not run it against your dev DB without your OK on that listing.
+- Existing tests that create users and documents set an explicit clearance (the shared helper defaults to `RESTRICTED` for tests
+  only; production default stays `PUBLIC`).
+- New tests set every setting they need; none reads `.env` (and verify-related ones use the explicit dead-port chain settings
+  from REL-04, never your real RPC).
+
+**Limits (stated, not claimed away).**
+- This is access control inside the application. It does not encrypt anything: someone with database or storage access, or
+  the service key, sees every document (CLAUDE.md #1/#4 are unchanged). Classification is not a substitute for the matter
+  / ethical-wall model (option (c)), which remains open under SEC-02.
+- Clearance is one ordered number per user: it cannot express "A but not B" at the same level.
+- A user with clearance sees a document's existence in the audit log only through rows they are entitled to (all of them, for
+  auditors/administrators); an ordinary role never sees the audit log.
+- The verification hashes of a document are visible to anyone cleared for it, by design.
+- Timing or response-size differences between "hidden" and "nonexistent" are not measured here.
+- Existing in-flight sessions pick up a changed clearance on their next request, not retroactively for data already
+  downloaded.
+
+**Test plan (written first, shown failing on the current code, hard timeouts on every test).** A user without clearance cannot
+list, search, open, download, list versions of, verify, read verification history of, or read the anchor record of a TOP_SECRET
+document, and it is absent from list totals and from the report counts; the same user can use a PUBLIC document normally;
+IDOR: guessing another document's or version's id behaves exactly like a nonexistent id (same status, body); the
+route-enumeration guard; no PATCH/PUT path changes classification, and amend with a different classification is refused and
+leaves it unchanged; upload above one's clearance is refused; invalid and lowercase classification refused; the audit trail
+(`ACCESS_DENIED` for an existing hidden document only, none for a nonexistent id, clearance changes audited, `meta` blanked
+for a hidden target); pre-signed URL generation is never reached for a refused download; self clearance change refused;
+maker-checker with a cleared reviewer; the stuck-anchor title redaction.
+**Outcome of D-051 (backend stage).**
+- Code: `core/clearance.py` (levels, rank, visibility rule), `documents/access.py` (the single loader and the validation errors),
+  every route with a document or version id now goes through it (`documents`, `versions`, `verify` and its history, `blockchain`
+  anchor record), `list_documents` filters in the query, `reports` aggregates over visible documents, the audit list blanks `meta`
+  for hidden targets (`redacted: true`), the stuck-anchor list withholds titles, `users` gain `clearance` (create default
+  `PUBLIC`, admin-only update, no self-change, audited old -> new). `scripts/classification_migration.py` (dry run by default),
+  `scripts/seed.py` sets a starting clearance by role.
+- **Tests first, shown failing.** `test_classification_access.py` (30 tests) on the unchanged application code with hard
+  timeouts: 28 failed, 2 passed (the route-enumeration guard and the positive control); the failures were real access
+  (hidden documents listed, 200 where 404, accepted free-text classification, review by an uncleared reviewer, ...). Two of
+  my own test bugs were found and fixed before the green run (both documents shared the tags, the audit action names), and four
+  more expectation mistakes in the first green run (the anchor route needs `document:view`, not `anchor:view`; `REVIEW_START` /
+  `CHANGES_REQ` are the audit actions; the user-update audit target is a string). After the implementation: 30 passed.
+- **Behaviour changes to be aware of.** (1) `GET /verify/{version_id}/history` for a version that does not exist is now 404
+  (it was `200 {"items": []}`), so a hidden version cannot be told from a missing one. (2) Existing tests that created users
+  without a clearance now give them `RESTRICTED` explicitly (the shared helper default is `RESTRICTED`, tests only), and two
+  fixtures that inserted a version/anchor with no owning document, and one that inserted documents with no `classification`,
+  now insert realistic rows: under deny-by-default those were correctly hidden. No assertion was loosened.
+- **Dry run against your dev DB (read-only; nothing written; waiting for your OK before `--apply`).** 45 documents:
+  `RESTRICTED` 15, `PUBLIC` 11, `INTERNAL` 9, `CONFIDENTIAL` 9, `restricted` 1. One document would change
+  (`6ac22019f8da2a55636a3148`, title "homilivo": `restricted` -> `RESTRICTED`, case only). **No value would be guessed** (0
+  unmapped). 11 users have no clearance and would get the proposed level by role (Administrator `INTERNAL` x3, Authorized Staff
+  `CONFIDENTIAL` x2, Legal Officer `RESTRICTED` x3, Reviewing Officer `RESTRICTED` x1, Auditor `RESTRICTED` x2); none gets
+  `TOP_SECRET`. Until `--apply` runs, every existing user has no clearance, i.e. `PUBLIC`, so on your dev data only the 11
+  `PUBLIC` documents are visible to them.
+- Verification: `pytest` with the owner's `.env` exit 0 (344 passed, 94.26%), `ruff check app tests` exit 0, `pip_audit
+  -r requirements.txt --no-deps` exit 0.
+- **Clean worktree, no `.env`** (CI's five env vars only; its own Mongo and RustFS): the new tests (`test_classification_access`,
+  `test_classification_migration`, `test_clearance`) **51 passed, exit 0**; the full suite **344 passed, exit 0, 94.26%**;
+  `ruff check app tests` exit 0. Windows, not the CI runner's Ubuntu. The worktree and containers were removed.

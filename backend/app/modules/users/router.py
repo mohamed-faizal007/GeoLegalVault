@@ -64,7 +64,7 @@ async def update_user(
     if applied:
         # Field names always; values only for the RBAC/geofence inputs — never name/PII.
         meta: dict = {"fields": sorted(applied)}
-        for key in ("role", "is_active", "assigned_geofence_ids"):
+        for key in ("role", "is_active", "assigned_geofence_ids", "clearance"):
             if key in applied:
                 meta[key] = applied[key]
         await audit.record(

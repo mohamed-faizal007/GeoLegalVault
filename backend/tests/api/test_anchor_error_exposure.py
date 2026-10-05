@@ -26,7 +26,9 @@ _LEAKY = (
 async def _login(client, db, role: Role) -> str:
     email = f"{role.value.lower()}@example.com"
     await create_user(
-        db, UserCreate(email=email, password="Str0ngPassw0rd!", name="U", role=role)
+        db, UserCreate(
+            email=email, password="Str0ngPassw0rd!", name="U", role=role, clearance="RESTRICTED"
+        ),
     )
     resp = await client.post(
         "/api/v1/auth/login", json={"email": email, "password": "Str0ngPassw0rd!"}
@@ -35,6 +37,10 @@ async def _login(client, db, role: Role) -> str:
 
 
 async def _version(db, version_id: ObjectId, document_id: ObjectId) -> None:
+    # The anchor API resolves a version through its document (D-051), so the document must exist.
+    await db["documents"].insert_one(
+        {"_id": document_id, "title": "Doc", "classification": "PUBLIC", "status": "ACTIVE"}
+    )
     await db["document_versions"].insert_one(
         {
             "_id": version_id,

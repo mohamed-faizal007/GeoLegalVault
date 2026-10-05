@@ -33,6 +33,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.errors import AppError
 from app.modules.audit import service as audit
 from app.modules.blockchain import service as blockchain_service
+from app.modules.documents import access
 from app.modules.documents import service as documents_service
 from app.modules.verify.models import VERIFICATION_RECORDS_COLLECTION, VerificationResult
 from app.modules.verify.schemas import VerificationRecordOut, VerifyResponse
@@ -139,6 +140,10 @@ async def verify_version(
     document = await documents_service.get_document_by_id(db, str(version["document_id"]))
     if document is None:
         raise VersionNotFound("owning document not found")
+    if not access.can_view(actor, document):
+        # Same 404 as an unknown version (D-051); the attempt is on record.
+        await access.audit_denied(actor, document, endpoint="verify", version_id=version_id)
+        raise VersionNotFound()
 
     stored = version["sha256"]
     claims_anchored = await _database_claims_anchored(db, version)
@@ -324,8 +329,12 @@ async def _flag_and_audit(
 
 
 async def list_verification_history(
-    db: AsyncIOMotorDatabase, version_id: str
+    db: AsyncIOMotorDatabase, version_id: str, actor: dict[str, Any]
 ) -> list[dict[str, Any]]:
+    """404 for a version that is missing or above the caller's clearance (D-051)."""
+    visible = await access.resolve_visible_version(db, actor, version_id, endpoint="verify-history")
+    if visible is None:
+        raise VersionNotFound()
     try:
         oid = ObjectId(version_id)
     except InvalidId:

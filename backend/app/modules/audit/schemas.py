@@ -16,6 +16,8 @@ class AuditLogOut(BaseModel):
     ip: str | None = None
     location: dict[str, Any] | None = None
     meta: dict[str, Any] = {}
+    # True when `meta` was withheld because the target is above the viewer's clearance (D-051).
+    redacted: bool = False
     created_at: datetime
 
 

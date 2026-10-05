@@ -57,6 +57,7 @@ async def _uploader_token(client, db) -> str:
             name="Uploader",
             role=Role.AUTHORIZED_STAFF,
             assigned_geofence_ids=[fence.id],
+            clearance="RESTRICTED",  # the upload tests use RESTRICTED/PUBLIC documents (D-051)
         ),
     )
     resp = await client.post(

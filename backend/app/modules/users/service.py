@@ -8,6 +8,7 @@ from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo.errors import DuplicateKeyError
 
+from app.core.clearance import effective_clearance
 from app.core.errors import AppError
 from app.core.security import hash_password
 from app.modules.users.models import USERS_COLLECTION, Role
@@ -20,6 +21,18 @@ class EmailAlreadyExists(Exception):
 
 class UserNotFound(Exception):
     pass
+
+
+class SelfClearanceChange(AppError):
+    """Nobody may change their own clearance: another administrator must (D-051)."""
+
+    status_code = 403
+
+    def __init__(self) -> None:
+        super().__init__(
+            "SELF_CLEARANCE_CHANGE",
+            "You can't change your own clearance; ask another administrator",
+        )
 
 
 class SelfLockout(AppError):
@@ -36,6 +49,7 @@ def _to_out(doc: dict[str, Any]) -> UserOut:
         name=doc["name"],
         role=doc["role"],
         assigned_geofence_ids=doc.get("assigned_geofence_ids", []),
+        clearance=effective_clearance(doc),
         is_active=doc["is_active"],
         created_at=doc["created_at"],
         last_login=doc.get("last_login"),
@@ -49,6 +63,7 @@ async def create_user(db: AsyncIOMotorDatabase, payload: UserCreate) -> UserOut:
         "name": payload.name,
         "role": payload.role.value,
         "assigned_geofence_ids": payload.assigned_geofence_ids,
+        "clearance": payload.clearance,
         "is_active": True,
         "created_at": datetime.now(UTC),
         "last_login": None,
@@ -106,12 +121,18 @@ async def update_user(
             raise SelfLockout("You can't remove your own administrator role")
         if updates.get("is_active") is False:
             raise SelfLockout("You can't deactivate your own account")
+        if "clearance" in updates and updates["clearance"] != effective_clearance(doc):
+            raise SelfClearanceChange()
     if not updates:
         return _to_out(doc), {}
 
+    previous_clearance = effective_clearance(doc)
     await db[USERS_COLLECTION].update_one({"_id": doc["_id"]}, {"$set": updates})
     doc.update(updates)
-    return _to_out(doc), updates
+    applied = dict(updates)
+    if "clearance" in applied:
+        applied["clearance"] = {"from": previous_clearance, "to": updates["clearance"]}
+    return _to_out(doc), applied
 
 
 async def record_login(db: AsyncIOMotorDatabase, user_id: ObjectId) -> None:

@@ -22,7 +22,7 @@ _require_audit_view = require(AUDIT_VIEW)
 @router.get("", response_model=AuditLogListOut)
 async def list_audit_logs(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_audit_view)],
+    actor: Annotated[dict, Depends(_require_audit_view)],
     actor_id: str | None = None,
     action: str | None = None,
     result: str | None = None,
@@ -45,6 +45,10 @@ async def list_audit_logs(
         page=page,
         limit=limit,
     )
+    hidden = await service.hidden_row_ids(db, actor, items)
     return AuditLogListOut(
-        items=[service.to_out(doc) for doc in items], page=page, limit=limit, total=total
+        items=[service.to_out(doc, redacted=doc["_id"] in hidden) for doc in items],
+        page=page,
+        limit=limit,
+        total=total,
     )

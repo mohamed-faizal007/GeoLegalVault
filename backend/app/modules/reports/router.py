@@ -20,6 +20,6 @@ _require_reports_view = require(AUDIT_VIEW)
 @router.get("/summary", response_model=ReportsSummary)
 async def get_summary(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_reports_view)],
+    actor: Annotated[dict, Depends(_require_reports_view)],
 ) -> ReportsSummary:
-    return await service.get_summary(db)
+    return await service.get_summary(db, actor)

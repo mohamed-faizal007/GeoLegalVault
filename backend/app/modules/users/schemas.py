@@ -2,10 +2,14 @@
 
 import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.modules.users.models import Role
+
+# Mirrors app.core.clearance.LEVELS (a unit test pins the two together).
+ClearanceLevel = Literal["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED", "TOP_SECRET"]
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -22,6 +26,9 @@ class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     role: Role
     assigned_geofence_ids: list[str] = Field(default_factory=list)
+    # Which documents this user may see (SEC-02, D-051). The lowest level until an administrator
+    # says otherwise: deny by default.
+    clearance: ClearanceLevel = "PUBLIC"
 
     _normalize_email = field_validator("email")(_validate_email)
 
@@ -33,6 +40,7 @@ class UserUpdate(BaseModel):
     role: Role | None = None
     assigned_geofence_ids: list[str] | None = None
     is_active: bool | None = None
+    clearance: ClearanceLevel | None = None
 
 
 class UserOut(BaseModel):
@@ -41,6 +49,7 @@ class UserOut(BaseModel):
     name: str
     role: Role
     assigned_geofence_ids: list[str]
+    clearance: ClearanceLevel
     is_active: bool
     created_at: datetime
     last_login: datetime | None = None

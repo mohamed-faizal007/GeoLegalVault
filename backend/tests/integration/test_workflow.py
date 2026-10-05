@@ -55,7 +55,12 @@ async def _create_fence(db) -> str:
     return fence.id
 
 
-async def _create_user_and_login(client, db, *, email: str, role, fence_id: str) -> str:
+async def _create_user_and_login(
+    client, db, *, email: str, role, fence_id: str, clearance: str = "RESTRICTED"
+) -> str:
+    """`clearance` defaults to RESTRICTED for tests only (the production default is PUBLIC):
+    the existing lifecycle tests upload RESTRICTED documents and expect every role to work
+    on them. Tests about access set it explicitly (D-051)."""
     from app.modules.users.schemas import UserCreate
     from app.modules.users.service import create_user
 
@@ -65,6 +70,7 @@ async def _create_user_and_login(client, db, *, email: str, role, fence_id: str)
             email=email, password=PASSWORD, name=email, role=role, assigned_geofence_ids=[fence_id]
         ),
     )
+    await db["users"].update_one({"email": email.lower()}, {"$set": {"clearance": clearance}})
     resp = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
     assert resp.status_code == 200, resp.text
     return resp.json()["access_token"]

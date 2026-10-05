@@ -357,6 +357,7 @@ async def test_anchor_api_returns_stored_anchor_with_etherscan_link(client, db, 
             name="Viewer",
             role=Role.AUDITOR,
             assigned_geofence_ids=[fence.id],
+            clearance="RESTRICTED",
         ),
     )
     login = await client.post(
@@ -366,6 +367,10 @@ async def test_anchor_api_returns_stored_anchor_with_etherscan_link(client, db, 
     token = login.json()["access_token"]
 
     document_id = ObjectId()
+    # The anchor API resolves a version through its document (D-051), so the document must exist.
+    await db["documents"].insert_one(
+        {"_id": document_id, "title": "Doc", "classification": "PUBLIC", "status": "ACTIVE"}
+    )
     version_doc = await versions_service.insert_version(
         db,
         document_id=document_id,

@@ -47,7 +47,7 @@ async def verify_version(
 async def verify_history(
     version_id: str,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_verify_or_audit)],
+    actor: Annotated[dict, Depends(_require_verify_or_audit)],
 ) -> VerificationHistoryOut:
-    records = await service.list_verification_history(db, version_id)
+    records = await service.list_verification_history(db, version_id, actor)
     return VerificationHistoryOut(items=[service.to_out(r) for r in records])

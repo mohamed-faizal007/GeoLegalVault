@@ -26,7 +26,10 @@ PASSWORD = "Str0ngPassw0rd!"
 
 
 async def _login(client, db, email: str, role: Role) -> str:
-    await create_user(db, UserCreate(email=email, password=PASSWORD, name="Test", role=role))
+    await create_user(
+        db,
+        UserCreate(email=email, password=PASSWORD, name="Test", role=role, clearance="RESTRICTED"),
+    )
     resp = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
     assert resp.status_code == 200, resp.text
     return resp.json()["access_token"]
@@ -40,10 +43,34 @@ async def _seed_summary_fixtures(db) -> None:
     now = datetime.now(UTC)
     await db[DOCUMENTS_COLLECTION].insert_many(
         [
-            {"status": "DRAFT", "doc_type": "CONTRACT", "created_at": now, "updated_at": now},
-            {"status": "DRAFT", "doc_type": "MEMO", "created_at": now, "updated_at": now},
-            {"status": "ACTIVE", "doc_type": "CONTRACT", "created_at": now, "updated_at": now},
-            {"status": "ARCHIVED", "doc_type": "CONTRACT", "created_at": now, "updated_at": now},
+            {
+                "classification": "PUBLIC",
+                "status": "DRAFT",
+                "doc_type": "CONTRACT",
+                "created_at": now,
+                "updated_at": now,
+            },
+            {
+                "classification": "PUBLIC",
+                "status": "DRAFT",
+                "doc_type": "MEMO",
+                "created_at": now,
+                "updated_at": now,
+            },
+            {
+                "classification": "PUBLIC",
+                "status": "ACTIVE",
+                "doc_type": "CONTRACT",
+                "created_at": now,
+                "updated_at": now,
+            },
+            {
+                "classification": "PUBLIC",
+                "status": "ARCHIVED",
+                "doc_type": "CONTRACT",
+                "created_at": now,
+                "updated_at": now,
+            },
         ]
     )
     await db[BLOCKCHAIN_ANCHORS_COLLECTION].insert_many(

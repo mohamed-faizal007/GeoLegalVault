@@ -66,6 +66,7 @@ async def _create_user_and_login(
             name=email,
             role=role,
             assigned_geofence_ids=[fence_id] if fence_id else [],
+            clearance="RESTRICTED",  # these tests use RESTRICTED documents (D-051)
         ),
     )
     resp = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})

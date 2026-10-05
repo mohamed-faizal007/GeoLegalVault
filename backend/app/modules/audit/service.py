@@ -21,6 +21,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.core.clearance import can_see
 from app.core.db import get_database
 from app.modules.audit.models import AUDIT_LOGS_COLLECTION
 from app.modules.audit.schemas import AuditLogOut
@@ -69,7 +70,54 @@ def _id_filter(value: str) -> Any:
         return value
 
 
-def to_out(doc: dict[str, Any]) -> AuditLogOut:
+async def hidden_row_ids(
+    db: AsyncIOMotorDatabase, viewer: dict[str, Any], rows: list[dict[str, Any]]
+) -> set[Any]:
+    """Ids of audit rows whose target is a document (or a version of one) that is above the
+    viewer's clearance (D-051). Such rows stay visible, so oversight of who did what is not
+    blinded, but their `meta` (review comments, reasons, tx data) is withheld. A target that
+    cannot be found, or is not a document, has nothing to protect."""
+    from app.modules.documents.models import DOCUMENTS_COLLECTION
+    from app.modules.versions.models import DOCUMENT_VERSIONS_COLLECTION
+
+    doc_ids: set[Any] = set()
+    version_ids: set[Any] = set()
+    for row in rows:
+        target = row.get("target_id")
+        if isinstance(target, ObjectId):
+            if row.get("target_type") == "document":
+                doc_ids.add(target)
+            elif row.get("target_type") == "version":
+                version_ids.add(target)
+
+    version_to_doc: dict[Any, Any] = {}
+    if version_ids:
+        cursor = db[DOCUMENT_VERSIONS_COLLECTION].find(
+            {"_id": {"$in": list(version_ids)}}, {"document_id": 1}
+        )
+        version_to_doc = {v["_id"]: v["document_id"] async for v in cursor}
+    all_doc_ids = doc_ids | set(version_to_doc.values())
+    classification: dict[Any, Any] = {}
+    if all_doc_ids:
+        cursor = db[DOCUMENTS_COLLECTION].find(
+            {"_id": {"$in": list(all_doc_ids)}}, {"classification": 1}
+        )
+        classification = {d["_id"]: d.get("classification") async for d in cursor}
+
+    def hidden(document_id: Any) -> bool:
+        return document_id in classification and not can_see(viewer, classification[document_id])
+
+    hidden_rows: set[Any] = set()
+    for row in rows:
+        target = row.get("target_id")
+        if row.get("target_type") == "document" and hidden(target):
+            hidden_rows.add(row["_id"])
+        elif row.get("target_type") == "version" and hidden(version_to_doc.get(target)):
+            hidden_rows.add(row["_id"])
+    return hidden_rows
+
+
+def to_out(doc: dict[str, Any], *, redacted: bool = False) -> AuditLogOut:
     return AuditLogOut(
         id=str(doc["_id"]),
         actor_id=str(doc["actor_id"]) if doc.get("actor_id") is not None else None,
@@ -79,7 +127,8 @@ def to_out(doc: dict[str, Any]) -> AuditLogOut:
         result=doc["result"],
         ip=doc.get("ip"),
         location=doc.get("location"),
-        meta=doc.get("meta") or {},
+        meta={} if redacted else (doc.get("meta") or {}),
+        redacted=redacted,
         created_at=doc["created_at"],
     )
 

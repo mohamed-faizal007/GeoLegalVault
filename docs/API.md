@@ -80,6 +80,33 @@ lat=11.67; lng=78.15; accuracy=25; timestamp=2026-09-01T10:00:00Z
 422 {"error": {"code": "MIME_MISMATCH", "message": "..."}}
 ```
 
+### Document access (clearance, SEC-02 / D-051)
+
+`classification` must be one of `PUBLIC`, `INTERNAL`, `CONFIDENTIAL`, `RESTRICTED`, `TOP_SECRET`
+(exact; anything else is `422 INVALID_CLASSIFICATION`). A user sees a document only if their
+`clearance` (same levels, set by an administrator) is at or above it.
+
+- A document above the caller's clearance is reported exactly like one that does not exist:
+  `404` with the same body, on every read and every action (detail, download, versions, verify and
+  its history, anchor record, submit/review/approve/amend/archive, integrity clear). `403` still means
+  "your role lacks the permission".
+- `GET /documents` (so search, totals and the dashboard) only contains documents the caller may see.
+  `GET /reports/summary` counts only those too, with no "hidden" hint.
+- Uploading above your own clearance is `403 CLASSIFICATION_NOT_ALLOWED`. An amend upload that names a
+  different classification is `422 CLASSIFICATION_IMMUTABLE` (and audited as
+  `CLASSIFICATION_CHANGE_REFUSED`); there is no endpoint that changes a classification.
+- `PATCH /users/{id}` accepts `clearance` (administrators only; changing your own is
+  `403 SELF_CLEARANCE_CHANGE`; the change is audited with the old and new level). New users default to
+  `PUBLIC`.
+- `GET /audit` still lists every event, but for a document or version above the viewer's clearance the
+  row's `meta` is empty and `redacted` is `true`. A refused attempt on an existing hidden document is
+  audited as `ACCESS_DENIED`.
+- `GET /blockchain/anchors/attention` shows `"Restricted document"` instead of the title of a document
+  above the viewer's clearance; re-queueing a stuck anchor does not require clearance (it never reveals
+  content or contacts the chain).
+- `GET /verify/{version_id}/history` for a version that does not exist is now `404` (it used to be an
+  empty list), so a hidden version cannot be told apart from a missing one.
+
 ### Example: verify
 
 ```http

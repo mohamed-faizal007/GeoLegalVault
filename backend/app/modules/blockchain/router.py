@@ -26,6 +26,7 @@ from app.modules.blockchain.schemas import (
     AnchorRetryRequest,
     OnchainAnchor,
 )
+from app.modules.documents import access
 from app.modules.documents import service as documents_service
 from app.modules.versions.service import get_version_by_id
 from app.services import blockchain as chain
@@ -44,13 +45,17 @@ _require_retry_geofence = require_geofence("anchor_retry")
 async def get_anchor(
     version_id: str,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_view)],
+    actor: Annotated[dict, Depends(_require_view)],
 ) -> AnchorOut:
+    # A version above the caller's clearance gets the same 404 as one with no anchor (D-051).
+    no_anchor = HTTPException(
+        status.HTTP_404_NOT_FOUND, detail="No anchor recorded for this version"
+    )
+    if await access.resolve_visible_version(db, actor, version_id, endpoint="anchor") is None:
+        raise no_anchor
     anchor = await service.get_latest_anchor_for_version(db, version_id)
     if anchor is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, detail="No anchor recorded for this version"
-        )
+        raise no_anchor
 
     onchain: OnchainAnchor | None = None
     if anchor.get("tx_hash"):
@@ -90,7 +95,7 @@ async def anchors_needing_attention(
 ) -> AnchorAttentionOut:
     """Documents left APPROVED because their anchor has not landed. Read-only."""
     items = await retry.attention_items(
-        db, caller_can_retry=has_permission(user["role"], ANCHOR_RETRY)
+        db, caller_can_retry=has_permission(user["role"], ANCHOR_RETRY), viewer=user
     )
     return AnchorAttentionOut(
         items=[AnchorAttentionItem(**item) for item in items], total=len(items)

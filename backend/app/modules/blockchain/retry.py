@@ -18,6 +18,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ReturnDocument
 
+from app.core.clearance import HIDDEN_TITLE, can_see
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.modules.audit import service as audit
@@ -357,9 +358,12 @@ async def requeue(
 
 
 async def attention_items(
-    db: AsyncIOMotorDatabase, *, caller_can_retry: bool
+    db: AsyncIOMotorDatabase, *, caller_can_retry: bool, viewer: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """APPROVED documents whose anchor needs a human's eye (D-041). Read-only."""
+    """APPROVED documents whose anchor needs a human's eye (D-041). Read-only.
+
+    An operational alert for everyone with anchor:view; the title of a document above the
+    viewer's clearance is withheld (D-051), so an operator can still see and re-queue it."""
     from app.modules.versions import service as versions_service  # avoids an import cycle
 
     s = get_settings()
@@ -400,7 +404,9 @@ async def attention_items(
         items.append(
             {
                 "document_id": str(document["_id"]),
-                "title": document["title"],
+                "title": document["title"]
+                if can_see(viewer, document.get("classification"))
+                else HIDDEN_TITLE,
                 "version_no": version["version_no"],
                 "state": label,
                 "last_error": codes.public_error(last_error),

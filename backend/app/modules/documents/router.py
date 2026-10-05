@@ -14,6 +14,7 @@ from fastapi import (
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from starlette.datastructures import UploadFile  # request.form() yields Starlette's class
 
+from app.core.clearance import visible_classifications
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import AppError
@@ -31,7 +32,7 @@ from app.core.rbac import (
     require,
 )
 from app.modules.audit import service as audit
-from app.modules.documents import service, workflow
+from app.modules.documents import access, service, workflow
 from app.modules.documents.models import DocumentStatus
 from app.modules.documents.schemas import (
     AmendRequest,
@@ -64,11 +65,11 @@ _require_approve_geofence = require_geofence("document_approve")
 _require_amend_geofence = require_geofence("document_amend")
 
 
-async def _get_document_or_404(db: AsyncIOMotorDatabase, document_id: str) -> dict:
-    doc = await service.get_document_by_id(db, document_id)
-    if doc is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
-    return doc
+async def _get_document_or_404(
+    db: AsyncIOMotorDatabase, document_id: str, user: dict, endpoint: str
+) -> dict:
+    """The document, or one 404 for "missing" and "above your clearance" alike (D-051)."""
+    return await access.load_visible_document(db, user, document_id, endpoint=endpoint)
 
 
 _UPLOAD_FORM_OPENAPI = {
@@ -139,11 +140,24 @@ async def upload_document(
     content_type = file.content_type or "application/octet-stream"
 
     try:
+        # Validation step of the pipeline (Guardrail #5): a fixed set of levels, never free text.
+        access.validate_classification(classification)
         data = await file.read()
         if amend_of:
             if not has_permission(user["role"], DOCUMENT_AMEND):
                 raise RBACError("FORBIDDEN", f"Missing required permission: {DOCUMENT_AMEND}")
-            document = await _get_document_or_404(db, amend_of)
+            document = await _get_document_or_404(db, amend_of, user, "amend-upload")
+            if classification != document["classification"]:
+                # A downgrade (or upgrade) through the amend form is refused and on record.
+                await audit.record(
+                    actor_id=user["_id"],
+                    action="CLASSIFICATION_CHANGE_REFUSED",
+                    target_type="document",
+                    target_id=document["_id"],
+                    result="REFUSED",
+                    meta={"attempted": classification},
+                )
+                raise access.ClassificationImmutable()
             # Accepted as a new version either when an amendment was
             # requested off an ACTIVE document, or when the document looped
             # back to DRAFT after a review requested changes (review_feedback
@@ -174,6 +188,7 @@ async def upload_document(
                         f"to accept a new version (current status: {document['status']})"
                     )
         else:
+            access.require_clearance_for_upload(user, classification)
             result = await service.create_document_with_v1(
                 db,
                 title=title,
@@ -221,7 +236,7 @@ async def upload_document(
 @router.get("", response_model=DocumentListOut)
 async def list_documents(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_view)],
+    actor: Annotated[dict, Depends(_require_view)],
     query: str | None = None,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     doc_type: str | None = None,
@@ -233,6 +248,7 @@ async def list_documents(
 ) -> DocumentListOut:
     items, total = await service.list_documents(
         db,
+        classifications=visible_classifications(actor),
         query=query,
         status=status_filter,
         doc_type=doc_type,
@@ -251,9 +267,9 @@ async def list_documents(
 async def get_document(
     document_id: str,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
-    _actor: Annotated[dict, Depends(_require_view)],
+    actor: Annotated[dict, Depends(_require_view)],
 ) -> DocumentOut:
-    doc = await _get_document_or_404(db, document_id)
+    doc = await _get_document_or_404(db, document_id, actor, "detail")
     return service.to_out(doc)
 
 
@@ -265,7 +281,7 @@ async def download_document(
     actor: Annotated[dict, Depends(_require_view)],
     _fence: Annotated[dict, Depends(_require_download_geofence)],
 ) -> DownloadResponse:
-    doc = await _get_document_or_404(db, document_id)
+    doc = await _get_document_or_404(db, document_id, actor, "download")
     if doc.get("current_version_id") is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, detail="Document has no version to download"
@@ -295,7 +311,7 @@ async def submit_document(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
     user: Annotated[dict, Depends(_require_submit)],
 ) -> TransitionResponse:
-    document = await _get_document_or_404(db, document_id)
+    document = await _get_document_or_404(db, document_id, user, "submit")
     updated = await workflow.submit(db, document=document, actor=user)
     return TransitionResponse(document_id=document_id, status=updated["status"])
 
@@ -307,7 +323,7 @@ async def review_document(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
     user: Annotated[dict, Depends(_require_review)],
 ) -> TransitionResponse:
-    document = await _get_document_or_404(db, document_id)
+    document = await _get_document_or_404(db, document_id, user, "review")
     updated = await workflow.review(
         db, document=document, actor=user, decision=payload.decision, comment=payload.comment
     )
@@ -321,7 +337,7 @@ async def approve_document(
     user: Annotated[dict, Depends(_require_approve)],
     _fence: Annotated[dict, Depends(_require_approve_geofence)],
 ) -> TransitionResponse:
-    document = await _get_document_or_404(db, document_id)
+    document = await _get_document_or_404(db, document_id, user, "approve")
     result = await workflow.approve(db, document=document, actor=user)
     anchor = result.get("anchor")
     return TransitionResponse(
@@ -341,7 +357,7 @@ async def request_amendment(
     user: Annotated[dict, Depends(_require_amend)],
     _fence: Annotated[dict, Depends(_require_amend_geofence)],
 ) -> TransitionResponse:
-    document = await _get_document_or_404(db, document_id)
+    document = await _get_document_or_404(db, document_id, user, "amend")
     updated = await workflow.request_amendment(
         db, document=document, actor=user, reason=payload.reason
     )
@@ -354,7 +370,7 @@ async def archive_document(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
     user: Annotated[dict, Depends(_require_archive)],
 ) -> TransitionResponse:
-    document = await _get_document_or_404(db, document_id)
+    document = await _get_document_or_404(db, document_id, user, "archive")
     updated = await workflow.archive(db, document=document, actor=user)
     return TransitionResponse(document_id=document_id, status=updated["status"])
 
@@ -368,7 +384,7 @@ async def clear_integrity_flag(
 ) -> ClearIntegrityResponse:
     """Administrator-only. Re-runs 3-way verification on every anchored
     version first and refuses (409) unless all pass — see D-025."""
-    document = await _get_document_or_404(db, document_id)
+    document = await _get_document_or_404(db, document_id, user, "clear")
     verified = await workflow.clear_integrity_flag(
         db, document=document, actor=user, reason=payload.reason
     )

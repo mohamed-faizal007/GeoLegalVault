@@ -221,6 +221,7 @@ async def get_document_by_id(db: AsyncIOMotorDatabase, document_id: str) -> dict
 async def list_documents(
     db: AsyncIOMotorDatabase,
     *,
+    classifications: list[str],
     query: str | None,
     status: str | None,
     doc_type: str | None,
@@ -230,7 +231,9 @@ async def list_documents(
     page: int,
     limit: int,
 ) -> tuple[list[dict[str, Any]], int]:
-    filters: dict[str, Any] = {}
+    # Only documents at a level the caller's clearance reaches (D-051). This is part of the
+    # query, so totals, search hits and every filter combination are already restricted.
+    filters: dict[str, Any] = {"classification": {"$in": classifications}}
     if query:
         filters["$text"] = {"$search": query}
     if status:

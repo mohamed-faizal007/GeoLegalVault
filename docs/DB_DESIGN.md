@@ -22,6 +22,7 @@ gates every sensitive operation (Plan Part 0.1).
 | `name` | string | |
 | `role` | string | one of `ADMINISTRATOR, LEGAL_OFFICER, REVIEWING_OFFICER, AUTHORIZED_STAFF, AUDITOR` |
 | `assigned_geofence_ids` | string[] | geofences this user's sensitive ops are scoped to |
+| `clearance` | string | `PUBLIC \| INTERNAL \| CONFIDENTIAL \| RESTRICTED \| TOP_SECRET` (SEC-02, D-051): the highest document classification this user may see. Missing or invalid means `PUBLIC`. Set by an administrator, never by the user themselves |
 | `is_active` | bool | deactivation, never hard-delete |
 | `created_at`, `last_login` | datetime | |
 
@@ -60,7 +61,8 @@ already has `replaced_by` set means theft — the whole `family` is revoked).
 | Field | Type | Notes |
 |---|---|---|
 | `_id` | ObjectId | |
-| `title`, `doc_type`, `classification` | string | |
+| `title`, `doc_type` | string | |
+| `classification` | string | one of `PUBLIC < INTERNAL < CONFIDENTIAL < RESTRICTED < TOP_SECRET`, validated on upload, **immutable** afterwards (D-051). A value that is not a level is hidden from every role |
 | `owner_id` | ObjectId | the uploader |
 | `status` | string | lifecycle state — see Plan Part 5 |
 | `current_version_id` | ObjectId \| null | repointed only at final activation (never mid-review) |
