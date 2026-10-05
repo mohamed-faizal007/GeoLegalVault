@@ -154,18 +154,25 @@ async def upload_document(
                 document["status"] == DocumentStatus.DRAFT.value
                 and document.get("review_feedback") is not None
             )
-            if not (is_amendment_ready or is_correction_ready):
-                raise workflow.IllegalTransition(
-                    "document must be AMENDMENT_REQUESTED, or DRAFT with changes requested, "
-                    f"to accept a new version (current status: {document['status']})"
+            if is_amendment_ready or is_correction_ready:
+                result = await service.create_next_version(
+                    db,
+                    document=document,
+                    actor_id=user["_id"],
+                    data=data,
+                    content_type=content_type,
                 )
-            result = await service.create_next_version(
-                db,
-                document=document,
-                actor_id=user["_id"],
-                data=data,
-                content_type=content_type,
-            )
+            else:
+                # A late identical retry arrives after the first upload moved the
+                # document to DRAFT; it replays that version instead of failing (D-048).
+                result = await service.find_amendment_replay(
+                    db, document=document, actor_id=user["_id"], data=data
+                )
+                if result is None:
+                    raise workflow.IllegalTransition(
+                        "document must be AMENDMENT_REQUESTED, or DRAFT with changes requested, "
+                        f"to accept a new version (current status: {document['status']})"
+                    )
         else:
             result = await service.create_document_with_v1(
                 db,

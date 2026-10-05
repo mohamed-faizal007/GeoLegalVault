@@ -1198,9 +1198,9 @@ comparison says no.** Failure counts: baseline `4fec3f8` run from a temporary wo
 directory 6 of 37 (3/12, 2/20, 1/5); but HEAD run from a temporary worktree **0 of 20**, in a run interleaved with the
 baseline's 0 of 20. With both trees run from the same kind of location, only the code differs, and the result is 0 and 0. What
 correlated with failure was running from the main checkout on this machine, for a reason I did not isolate (candidates not
-tested: scanning of the repo directory, different file-system caching, other processes in the session). It is left unchanged:
-making it deterministic would change what it tests (D-029 already has a deterministic form,
-`test_stale_amendment_request_never_becomes_a_second_version`), and the choice belongs to the owner.
+tested: scanning of the repo directory, different file-system caching, other processes in the session). **Superseded by D-048:** this paragraph originally concluded "leave it". The cause was then confirmed to be a real
+gap, not only a scheduling artefact (the router's status gate rejects a late identical retry before the replay logic runs), and
+the behaviour and the test were changed. See D-048.
 
 ### D-047 — `test_old_stuck_documents_are_not_auto_sent_until_an_admin_requeues` depended on the owner's `.env` (CI red on `7ae1218`)
 **Problem.** CI failed this test on both the first run and the re-run: `await_count 0 == 1` on the last assertion, with the log
@@ -1237,3 +1237,54 @@ config; results are recorded below.
   test depends on the owner's local config; nothing else needed fixing. The worktree and its containers were removed afterwards.
 - **Limit of this evidence:** the clean run was on Windows, not the runner's Ubuntu 24.04, so it shows the `.env` dependency is
   gone, not that CI will be green; the second CI failure (D-048, next) is unrelated to this one.
+
+### D-048 — A late identical amendment upload replays with 201 instead of 409 `ILLEGAL_TRANSITION` (replaces D-046's "leave it")
+**Problem.** `test_concurrent_identical_amendment_upload_is_idempotent` failed on the CI runner once (`[201, 201, 409]`) and
+passes on re-run. D-024 and D-029 promise that an identical retry (same uploader, same bytes) is idempotent: it returns the
+version already accepted, with 201 and no second audit row.
+**Confirmed from the code (this is a behaviour gap, not just scheduling).** `documents/router.py` `upload_document` reads the
+document once and, before calling the service, requires `AMENDMENT_REQUESTED` or "`DRAFT` with `review_feedback` set"
+(router.py lines 152-161), otherwise it raises `IllegalTransition` (409). Once the first upload finishes the document is `DRAFT`
+with no `review_feedback` (an amendment, not a review correction), so **any identical retry that arrives after the winner
+finished is rejected at the gate and never reaches `create_next_version`**, whose replay logic (service.py: the `DuplicateKeyError`
+branch, and the DRAFT-correction branch) therefore only works for requests that were already past the gate. The same happens for a
+real client: the first response is lost or slow, the client retries, and gets a 409 for an upload that actually succeeded.
+**Alternatives**
+- **(a) Replay in the gate.** When the status gate fails, ask the service whether this request is an exact replay of the latest
+  version, and answer it with 201 and that version; otherwise raise the same 409 as today. Narrow conditions, below.
+- **(b) Keep the 409 and make the test accept `201` or `409`.** Zero risk, but it writes the flaw into the test, contradicts
+  D-024/D-029, and leaves real clients with a misleading error after a successful upload. It also stops the test saying anything
+  about idempotency (any mix of 201/409 would pass).
+- **(c) Move the whole gate into the service under a re-read of the document.** Same outcome as (a) with a larger refactor of a
+  concurrency-sensitive path (D-029 shows how easy this is to get wrong); no benefit over (a).
+**Decision: (a).** A request is a replay only if **all** of these hold, otherwise the 409 is unchanged:
+1. the caller already passed JWT, RBAC (`document:amend`) and geofence, and the bytes' SHA-256 must equal an already-accepted version's (so they already passed `validate_upload` once; bytes that
+   would not pass can never match); the order of Guardrail #5 is unchanged, the replay check is the "action" step;
+2. the document is `DRAFT` (not submitted, in review, approved, `ACTIVE`, rejected or archived, so a replay cannot move or
+   resurrect a document in any other state);
+3. its latest version has `version_no >= 2` and a `prev_version_hash` (an amendment version, never a first upload: a fresh,
+   never-submitted v1 still does not qualify, per D-015), and is itself `DRAFT`;
+4. that version's `uploaded_by` is the caller and its `sha256` equals the SHA-256 of the received bytes.
+A replay writes nothing: no new version row, no storage object, no status change, no audit row (as in D-024), so Guardrail #7
+is untouched (nothing in `document_versions` is written). A different uploader, different bytes, or any later state gives the
+same 409 as before.
+**Stated limit.** After the amended version is *submitted*, an identical retry gets 409 (state moved on); that is deliberate and
+tested. A replay also does not re-check who currently owns the document: authorisation is the RBAC check plus "you uploaded
+that exact version".
+**How it is checked.** The test no longer depends on scheduling: it posts the winner, then posts the identical request *after* it
+finished (the exact ordering that failed), and expects 201 with the same `version_id`, still only V1 and V2, one `UPLOAD` audit
+row, one stored object. The three-way concurrent test is kept; with this change every interleaving yields `[201, 201, 201]`.
+Negative tests (each must give 409 `ILLEGAL_TRANSITION` and leave `[V1, V2]` unchanged): different uploader with identical
+bytes; same uploader with different bytes; identical retry after the version was submitted; identical v1 bytes on a fresh
+never-submitted DRAFT; identical retry on an `ACTIVE` document.
+**Outcome of D-048.**
+- Code: `documents/service.py` `find_amendment_replay` (new, writes nothing) and the status gate in `documents/router.py`
+  `upload_document`, which now asks it before raising `ILLEGAL_TRANSITION`.
+- **Mutation check:** with the two app files reverted, `test_late_identical_amendment_upload_replays_with_201` fails
+  (deterministically, it forces the late ordering); with the change it passes. The five negative tests pass either way (they guard
+  the new path against loosening) and the fresh-v1 test pins D-015.
+- Full backend suite with the owner's `.env`: **274 passed, exit 0, 93.82% coverage**. In a clean no-`.env` worktree of the
+  commit (CI's five env vars only): **274 passed, exit 0, 93.78%**. `ruff check app tests`: exit 0. `pip_audit -r requirements.txt
+  --no-deps`: exit 0, no known vulnerabilities.
+- Not shown: that CI's Linux runner is green, and that the original `[201, 201, 409]` can no longer occur under real
+  scheduling beyond the forced ordering plus the unchanged three-way concurrent test (which passed in both runs here).

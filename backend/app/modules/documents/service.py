@@ -394,6 +394,35 @@ async def _base_version_for_next(
     return await versions_service.get_latest_version(db, document["_id"])
 
 
+async def find_amendment_replay(
+    db: AsyncIOMotorDatabase,
+    *,
+    document: dict[str, Any],
+    actor_id: ObjectId,
+    data: bytes,
+) -> dict[str, Any] | None:
+    """A late identical retry of an amendment upload that was already accepted (D-048).
+
+    The router's status gate rejects such a request (the document is by then a plain DRAFT)
+    before create_next_version can recognise it. Returns the already-accepted version only if
+    the document is still DRAFT and its latest version is an amendment (version_no >= 2, has a
+    prev_version_hash), still DRAFT, uploaded by `actor_id`, with exactly these bytes. Otherwise
+    None, and the caller keeps its ILLEGAL_TRANSITION. Writes nothing."""
+    if document["status"] != DocumentStatus.DRAFT.value:
+        return None
+    latest = await versions_service.get_latest_version(db, document["_id"])
+    if (
+        latest is not None
+        and latest["version_no"] >= 2
+        and latest.get("prev_version_hash")
+        and latest["status"] == VersionStatus.DRAFT.value
+        and latest["uploaded_by"] == actor_id
+        and latest["sha256"] == sha256_bytes(data)
+    ):
+        return {"document": document, "version": latest, "replayed": True}
+    return None
+
+
 async def create_next_version(
     db: AsyncIOMotorDatabase,
     *,

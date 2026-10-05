@@ -333,9 +333,17 @@ async def test_concurrent_amendment_uploads_never_overwrite_and_hash_matches_sto
     assert (await _get_document(client, ctx["approver"], document_id))["integrity_flag"] is None
 
 
+async def _upload_audit_count(db, document_id: str, version_no: int) -> int:
+    return await db["audit_logs"].count_documents(
+        {"target_id": ObjectId(document_id), "action": "UPLOAD", "meta.version_no": version_no}
+    )
+
+
 async def test_concurrent_identical_amendment_upload_is_idempotent(
     client, db, local_chain  # noqa: F811
 ):
+    """Three identical uploads at once. Whatever order they interleave in (a request that
+    arrives after the first finished included, D-048), all are answered 201 with one version."""
     ctx = await _active_document_with_amendment_requested(client, db)
     document_id = ctx["document_id"]
     data = PDF_BYTES + b"-double-click"
@@ -350,10 +358,110 @@ async def test_concurrent_identical_amendment_upload_is_idempotent(
     assert [v["version_no"] for v in versions] == [1, 2]
     assert storage.get_object(versions[1]["storage_key"]) == data
     # One accepted upload -> one UPLOAD audit row for it (replays are not re-audited).
-    uploads = await db["audit_logs"].count_documents(
-        {"target_id": ObjectId(document_id), "action": "UPLOAD", "meta.version_no": 2}
+    assert await _upload_audit_count(db, document_id, 2) == 1
+
+
+async def test_late_identical_amendment_upload_replays_with_201(
+    client, db, local_chain  # noqa: F811
+):
+    """The ordering that failed on CI, forced directly: the identical retry is sent only
+    after the first upload has completed (the document is a plain DRAFT by then), D-048."""
+    ctx = await _active_document_with_amendment_requested(client, db)
+    document_id = ctx["document_id"]
+    data = PDF_BYTES + b"-late-retry"
+
+    first = await _post_amend_upload(client, ctx["uploader"], document_id, data)
+    assert first.status_code == 201, first.text
+    assert (await _get_document(client, ctx["approver"], document_id))["status"] == "DRAFT"
+
+    late = await _post_amend_upload(client, ctx["uploader"], document_id, data)
+    assert late.status_code == 201, late.text
+    assert late.json() == first.json()
+
+    versions = await _get_versions(client, ctx["approver"], document_id)
+    assert [v["version_no"] for v in versions] == [1, 2]
+    assert storage.get_object(versions[1]["storage_key"]) == data
+    assert await _upload_audit_count(db, document_id, 2) == 1
+
+
+async def _assert_rejected_and_unchanged(client, ctx, response, *, expect_status: str):
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "ILLEGAL_TRANSITION"
+    versions = await _get_versions(client, ctx["approver"], ctx["document_id"])
+    assert [v["version_no"] for v in versions] == [1, 2]
+    document = await _get_document(client, ctx["approver"], ctx["document_id"])
+    assert document["status"] == expect_status
+
+
+async def test_late_replay_is_refused_for_another_uploader(client, db, local_chain):  # noqa: F811
+    ctx = await _active_document_with_amendment_requested(client, db)
+    data = PDF_BYTES + b"-mine"
+    first = await _post_amend_upload(client, ctx["uploader"], ctx["document_id"], data)
+    assert first.status_code == 201, first.text
+
+    # Same bytes, but not the user who uploaded that version: no replay, no leak of the version.
+    other = await _post_amend_upload(client, ctx["staff2"], ctx["document_id"], data)
+    await _assert_rejected_and_unchanged(client, ctx, other, expect_status="DRAFT")
+    assert "version_id" not in other.text
+
+
+async def test_late_replay_is_refused_for_different_bytes(client, db, local_chain):  # noqa: F811
+    ctx = await _active_document_with_amendment_requested(client, db)
+    first = await _post_amend_upload(
+        client, ctx["uploader"], ctx["document_id"], PDF_BYTES + b"-first"
     )
-    assert uploads == 1
+    assert first.status_code == 201, first.text
+
+    different = await _post_amend_upload(
+        client, ctx["uploader"], ctx["document_id"], PDF_BYTES + b"-second"
+    )
+    await _assert_rejected_and_unchanged(client, ctx, different, expect_status="DRAFT")
+
+
+async def test_late_replay_is_refused_once_the_version_is_submitted(
+    client, db, local_chain  # noqa: F811
+):
+    ctx = await _active_document_with_amendment_requested(client, db)
+    data = PDF_BYTES + b"-then-submitted"
+    first = await _post_amend_upload(client, ctx["uploader"], ctx["document_id"], data)
+    assert first.status_code == 201, first.text
+    await _submit(client, ctx["uploader"], ctx["document_id"])
+    submitted_status = (await _get_document(client, ctx["approver"], ctx["document_id"]))["status"]
+    assert submitted_status != "DRAFT"
+
+    retry = await _post_amend_upload(client, ctx["uploader"], ctx["document_id"], data)
+    await _assert_rejected_and_unchanged(client, ctx, retry, expect_status=submitted_status)
+
+
+async def test_late_replay_cannot_touch_an_active_document(client, db, local_chain):  # noqa: F811
+    ctx = await _active_document_with_amendment_requested(client, db)
+    data = PDF_BYTES + b"-goes-live"
+    first = await _post_amend_upload(client, ctx["uploader"], ctx["document_id"], data)
+    assert first.status_code == 201, first.text
+    await _submit(client, ctx["uploader"], ctx["document_id"])
+    await _review_approve(client, ctx["reviewer"], ctx["document_id"])
+    approved = await client.post(
+        f"/api/v1/documents/{ctx['document_id']}/approve",
+        headers={**_auth(ctx["approver"]), **_geo()},
+    )
+    assert approved.json()["status"] == "ACTIVE", approved.text
+
+    retry = await _post_amend_upload(client, ctx["uploader"], ctx["document_id"], data)
+    await _assert_rejected_and_unchanged(client, ctx, retry, expect_status="ACTIVE")
+
+
+async def test_amend_of_a_fresh_first_upload_is_never_a_replay(client, db):
+    """A never-submitted v1 DRAFT does not accept amendments (D-015) even with identical
+    bytes from its own uploader: the replay rule needs an amendment version (>= V2)."""
+    uploader, _reviewer, approver = await _setup_three_roles(client, db)
+    upload = await _upload(client, uploader)
+
+    again = await _post_amend_upload(client, uploader, upload["document_id"], PDF_BYTES)
+
+    assert again.status_code == 409, again.text
+    assert again.json()["error"]["code"] == "ILLEGAL_TRANSITION"
+    versions = await _get_versions(client, approver, upload["document_id"])
+    assert [v["version_no"] for v in versions] == [1]
 
 
 async def test_stale_amendment_request_never_becomes_a_second_version(
