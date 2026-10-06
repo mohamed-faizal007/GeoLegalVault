@@ -33,6 +33,7 @@ REASON = "Wallet funded again, re-driving the anchor"
 ITEM_KEYS = {
     "document_id",
     "title",
+    "title_hidden",  # D-052: a flag, not data about the document
     "version_no",
     "state",
     "last_error",
