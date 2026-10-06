@@ -1613,3 +1613,62 @@ maker-checker with a cleared reviewer; the stuck-anchor title redaction.
   an exposure here: user-target rows are never redacted. The script now writes the ObjectId and omits `location`; a regression test pins the shape; the 11 user
   rows (matched on action, actor `SYSTEM`, string target) and the 1 document row were corrected in place, an exceptional edit
   to an append-only log that you authorised, limited to those 12 rows. Count unchanged (297).
+
+
+### D-052 — SEC-02 UI: classification select, clearance in user management, nothing hidden shown, plain errors
+**Decided before any UI code. Facts this rests on (read from the code, not assumed).** The frontend learns the signed-in user
+only from the JWT claims (`id`, `role`, `email`, `AuthContext.tsx:64`); there is no `/auth/me` and the token carries no
+clearance. The server already filters every list, count and report, so a hidden document never reaches the browser. The audit
+page does not render `meta` at all today. The anchor-attention item returns `title = "Restricted document"` for a hidden
+document, indistinguishable by text from a document really titled that. The re-queue route does **not** go through the document
+loader (`blockchain/router.py:105-133`), so it works on a document the admin cannot see, and it writes `ANCHOR_RETRY_REQUESTED`;
+`test_the_stuck_anchor_list_withholds_titles_above_clearance_but_retry_still_works` already proves the retry succeeds.
+
+1. **Upload form.** The free-text Classification box becomes a required `<select>` of the five levels in order, **nothing
+   preselected** ("Choose a level"), so a level is always a deliberate choice and not a silent default. The client does not know the
+   user's own clearance and a client copy could be stale (a change applies on the next request), so **all five are offered and the
+   server decides** (Guardrail #5; the UI is a hint, never the check). A refused level shows plain text (point 2). No new endpoint
+   is added to learn the clearance (Guardrail #12); the alternative (put it in the JWT or add `/auth/me`) is rejected for the
+   staleness and the extra surface, and is cheap to revisit.
+2. **No raw errors.** `lib/errorMessages.ts` gains fixed, plain-language text for `INVALID_CLASSIFICATION`,
+   `CLASSIFICATION_NOT_ALLOWED` ("You can't classify a document above your own clearance level..."), `CLASSIFICATION_IMMUTABLE`
+   ("A document's classification can't be changed after upload..."), `SELF_CLEARANCE_CHANGE` ("You can't change your own
+   clearance; another administrator must."), and for the 404s that carry no code (`HTTP_404`). **The hidden-document 404 and the
+   missing-document 404 get exactly one wording**, "That document couldn't be found, or you don't have access to it", so the page
+   cannot tell the two apart either. The `Error code:` line stays (it is a fixed code, not server text).
+3. **User management.** A **Clearance** column in the table, a Clearance `<select>` in the create form (default `PUBLIC`, with a
+   one-line explanation: "Decides which documents this person can open: this level and everything below. This is access
+   control inside the application, not encryption.") and in the inline editor. The signed-in administrator's **own** row has the
+   select disabled with "You can't change your own clearance" (courtesy only, the server enforces it), and the editor sends
+   `clearance` **only if it changed**, so editing one's own name is never refused because of it.
+4. **Hidden documents absent from every list.** Nothing to do in the browser: the server omits them. The UI must not add a hint
+   ("3 hidden"), an empty-state that says "restricted", or a client-side filter that would make a leak look handled. Empty states
+   keep their neutral wording. The document page, version history, verification page and blockchain page on a hidden id show the
+   point-2 message and render **nothing else** (no partial title, no breadcrumb with the title, no classification).
+5. **Audit page.** `AuditLogOut` gains `redacted: boolean`. A redacted row shows a small **"details hidden"** marker in the Target
+   cell with the explanation "Details withheld: this record concerns a document above your clearance." The row itself, its target
+   id, actor, action, result and IP stay visible (oversight is not blinded, D-051 point 6). The target id stays a filter button,
+   **never a link to the document**, so there is no link that 404s or confirms existence.
+6. **Anchor-attention banner, and the administrator who cannot see the document.** Backend: the item gains `title_hidden: bool`
+   (one field, set by the same `can_see` check), so the UI does not guess from the title text. UI when hidden: the title is
+   shown as muted "Restricted document" and is **not a link** (it would 404); a short **reference**, the last 8 characters of the
+   document id, is shown so several hidden rows can be told apart and matched to audit rows the viewer can already see; one line of
+   plain text: "You aren't cleared to open this document. You can still ask for the anchor to be retried." **The Retry button
+   and the reason form are unchanged** (still `anchor:retry`, still geofenced, still audited). The success notice never contains
+   the title when hidden ("Retry requested. It is now back in the queue."). Backend tests added: a hidden document's retry writes
+   exactly one `ANCHOR_RETRY_REQUESTED` row, and neither the response nor the notice data carries the title. Stated limit: for an
+   administrator below the document's level the audit row of their own retry shows with `meta` blanked (the written reason
+   included), by the D-051 rule, which does not make an exception for the author.
+7. **Dashboard, repository, version history, verification, blockchain pages, audit links.** Dashboard counts and recent documents
+   and the repository filters and totals come from the already-filtered list API, so they are correct by construction; they are
+   checked, not changed. The document page shows the classification as a readable label (e.g. "Restricted") for documents the
+   user can open. The amendment page keeps passing the document's own classification (the server now rejects any other).
+8. **Tests and the leak check.** Vitest for: the select (five options, none preselected, value sent), each new error text, the
+   clearance column/select/self-row/only-if-changed, the redacted marker (present when `redacted`, absent otherwise, never a link),
+   the banner for a hidden item (not a link, reference shown, retry works, notice without title) and for a visible one
+   (unchanged). The leak review (dashboard counts and recent, repository, banner, version history, verify, audit target links)
+   is run against the real backend with a low-clearance user and its result recorded here, with what could not be checked.
+
+**Limits.** The browser never enforces anything; a user can call the API directly and gets the same server answers. The upload
+select cannot warn about a level above the user's clearance until the server refuses it. The reference shown for a hidden
+document is an id fragment the viewer could already read in the audit log.
