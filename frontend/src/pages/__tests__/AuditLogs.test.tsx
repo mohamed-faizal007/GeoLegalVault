@@ -24,6 +24,7 @@ const entry = {
   ip: null,
   location: null,
   meta: {},
+  redacted: false,
   created_at: "2026-03-10T12:00:00Z",
 };
 
@@ -101,5 +102,38 @@ describe("AuditLogs filters", () => {
   it("warns when the date range is inverted", async () => {
     renderAudit("/audit?date_from=2026-03-10&date_to=2026-03-01");
     expect(await screen.findByRole("alert")).toHaveTextContent(/after the To date/i);
+  });
+});
+
+describe("redacted rows (D-051/D-052)", () => {
+  it("marks a row whose details were withheld, and keeps the target a filter, never a link", async () => {
+    listAuditLogsMock.mockResolvedValue({
+      items: [{ ...entry, redacted: true }],
+      page: 1,
+      limit: 25,
+      total: 1,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/audit"]}>
+          <Routes>
+            <Route path="/audit" element={<AuditLogs />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("details hidden")).toHaveAttribute(
+      "title",
+      "Details withheld: this record concerns a document above your clearance.",
+    );
+    expect(screen.getByText("doc-456")).toBeInTheDocument(); // oversight is not blinded
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("shows no marker on an ordinary row", async () => {
+    renderAudit();
+    await screen.findByText("UPLOAD");
+    expect(screen.queryByText("details hidden")).not.toBeInTheDocument();
   });
 });

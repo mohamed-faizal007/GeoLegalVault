@@ -38,7 +38,9 @@ export type AnchorAttentionState =
 
 export interface AnchorAttentionItem {
   document_id: string;
+  /** The placeholder when `title_hidden`: the viewer is below the document's level (D-052). */
   title: string;
+  title_hidden: boolean;
   version_no: number;
   state: AnchorAttentionState;
   /** A fixed code from the backend, never raw error text; see lib/anchorAttention.ts. */

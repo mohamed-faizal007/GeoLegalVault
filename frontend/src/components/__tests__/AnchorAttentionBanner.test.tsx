@@ -41,6 +41,7 @@ function item(overrides: Partial<AnchorAttentionItem> = {}): AnchorAttentionItem
   return {
     document_id: "d-1",
     title: "Vendor NDA",
+    title_hidden: false,
     version_no: 1,
     state: "RETRYING",
     last_error: "RPC_UNREACHABLE",
@@ -237,6 +238,55 @@ describe("AnchorAttentionBanner", () => {
 
       expect(await screen.findByText(/location access was denied/i)).toBeInTheDocument();
       expect(retryMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("a document the viewer is not cleared to open (D-052)", () => {
+    const hidden = () =>
+      item({
+        document_id: "64f0a1b2c3d4e5f6a7b8c9d0",
+        title: "Restricted document",
+        title_hidden: true,
+        state: "PERMANENT_FAILURE",
+      });
+
+    it("shows the placeholder as plain text, not a link, with a short reference", async () => {
+      withItems(hidden());
+      renderBanner();
+      expect(await screen.findByText("Restricted document")).toBeInTheDocument();
+      expect(screen.queryByRole("link")).not.toBeInTheDocument();
+      expect(screen.getByText("ref a7b8c9d0")).toBeInTheDocument();
+      expect(screen.getByText(/aren't cleared to open this document/i)).toBeInTheDocument();
+    });
+
+    it("still lets an administrator retry, and the notice never names the document", async () => {
+      const user = userEvent.setup();
+      withItems(hidden());
+      retryMock.mockResolvedValue({ document_id: "x", state: "RETRYING", next_attempt_at: null });
+      renderBanner();
+
+      await user.click(await screen.findByRole("button", { name: /retry anchoring/i }));
+      await user.type(screen.getByLabelText(/reason for the retry/i), "Node was down overnight");
+      await user.click(screen.getByRole("button", { name: /send retry request/i }));
+
+      await waitFor(() =>
+        expect(retryMock).toHaveBeenCalledWith(
+          "64f0a1b2c3d4e5f6a7b8c9d0",
+          "Node was down overnight",
+          COORDS,
+        ),
+      );
+      const notice = await screen.findByText(/retry requested/i);
+      expect(notice.textContent).toBe("Retry requested. It is now back in the queue.");
+    });
+
+    it("keeps linking to a document the viewer can open", async () => {
+      withItems(item());
+      renderBanner();
+      expect(await screen.findByRole("link", { name: "Vendor NDA" })).toHaveAttribute(
+        "href",
+        "/documents/d-1",
+      );
     });
   });
 });

@@ -7,6 +7,7 @@ import type { GeoCoords } from "../api/http";
 import ErrorBanner from "../components/ErrorBanner";
 import FileDropzone from "../components/FileDropzone";
 import LocationGate from "../components/LocationGate";
+import { LEVELS, levelLabel } from "../lib/classification";
 
 export default function Upload() {
   const navigate = useNavigate();
@@ -41,8 +42,11 @@ export default function Upload() {
             className="card space-y-4 p-6"
           >
             <div>
-              <label className="field-label">Title</label>
+              <label className="field-label" htmlFor="upload-title">
+                Title
+              </label>
               <input
+                id="upload-title"
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -51,8 +55,11 @@ export default function Upload() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="field-label">Document type</label>
+                <label className="field-label" htmlFor="upload-doc-type">
+                  Document type
+                </label>
                 <input
+                  id="upload-doc-type"
                   required
                   value={docType}
                   onChange={(e) => setDocType(e.target.value)}
@@ -61,14 +68,28 @@ export default function Upload() {
                 />
               </div>
               <div>
-                <label className="field-label">Classification</label>
-                <input
+                <label className="field-label" htmlFor="upload-classification">
+                  Classification
+                </label>
+                <select
+                  id="upload-classification"
                   required
                   value={classification}
                   onChange={(e) => setClassification(e.target.value)}
-                  placeholder="e.g. RESTRICTED"
                   className="input mt-1"
-                />
+                >
+                  <option value="" disabled>
+                    Choose a level
+                  </option>
+                  {LEVELS.map((level) => (
+                    <option key={level} value={level}>
+                      {levelLabel(level)}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-faint">
+                  Fixed after upload. You can classify up to your own clearance level.
+                </p>
               </div>
             </div>
             <div>

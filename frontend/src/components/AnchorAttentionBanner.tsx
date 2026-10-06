@@ -54,7 +54,9 @@ export default function AnchorAttentionBanner() {
     mutationFn: async (vars: { documentId: string; reason: string }) =>
       retryAnchor(vars.documentId, vars.reason, await getCurrentLocation()),
     onSuccess: (_data, vars) => {
-      const title = items.find((item) => item.document_id === vars.documentId)?.title;
+      const item = items.find((candidate) => candidate.document_id === vars.documentId);
+      // A document the viewer cannot open is never named, not even by its placeholder (D-052).
+      const title = item && !item.title_hidden ? item.title : null;
       setNotice(`Retry requested${title ? ` for “${title}”` : ""}. It is now back in the queue.`);
       setOpenId(null);
       setReason("");
@@ -161,16 +163,33 @@ function AttentionRow({
   return (
     <li className="rounded-lg border border-white/10 bg-raised/40 p-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Link
-          to={`/documents/${item.document_id}`}
-          className="text-sm font-semibold text-ink hover:text-brand-200"
-        >
-          {item.title}
-        </Link>
+        {item.title_hidden ? (
+          // Not a link: opening it would only give a not-found page. The reference is a fragment of
+          // the id the viewer can already read in the audit log, so several rows can be told apart.
+          <span className="text-sm font-semibold italic text-muted">
+            {item.title}
+            <span className="ml-2 font-mono text-xs not-italic font-normal text-faint">
+              ref {item.document_id.slice(-8)}
+            </span>
+          </span>
+        ) : (
+          <Link
+            to={`/documents/${item.document_id}`}
+            className="text-sm font-semibold text-ink hover:text-brand-200"
+          >
+            {item.title}
+          </Link>
+        )}
         <span className="text-xs text-muted">version {item.version_no}</span>
         <StatusBadge status={item.state} />
       </div>
 
+      {item.title_hidden && (
+        <p className="mt-2 text-xs text-muted">
+          You aren&apos;t cleared to open this document. You can still ask for the anchor to be
+          retried.
+        </p>
+      )}
       <p className="mt-2 text-sm text-ink/90">{stateGuidance(item.state, mayRetry)}</p>
       <p className="mt-1 text-xs text-muted">
         {error.label}

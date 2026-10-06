@@ -21,6 +21,13 @@ const CODE_MESSAGES: Record<string, string> = {
   NOT_FOUND: "That item couldn't be found.",
   STORAGE_UNAVAILABLE: "The file storage service is temporarily unavailable. Try again shortly.",
   VALIDATION_ERROR: "The submitted data didn't pass validation.",
+  HTTP_404: "That item couldn't be found, or you don't have access to it.",
+  INVALID_CLASSIFICATION: "Choose one of the listed classification levels.",
+  CLASSIFICATION_NOT_ALLOWED:
+    "You can't classify a document above your own clearance level. Choose a lower level, or ask an administrator.",
+  CLASSIFICATION_IMMUTABLE:
+    "A document's classification can't be changed after upload. Amend it at the same level, or upload a new document.",
+  SELF_CLEARANCE_CHANGE: "You can't change your own clearance. Another administrator must do it.",
   ANCHOR_NOT_RETRYABLE:
     "This anchor can't be re-queued right now: it is already in flight, confirmed, or being worked on. Refresh and check its state.",
 };

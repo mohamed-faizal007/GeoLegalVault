@@ -35,6 +35,8 @@ class AnchorAttentionItem(BaseModel):
 
     document_id: str
     title: str
+    # True when `title` is the placeholder because the viewer is below the document's level (D-052).
+    title_hidden: bool = False
     version_no: int
     state: str  # RETRYING | AWAITING_CONFIRMATION | PERMANENT_FAILURE | NEEDS_ADMIN_RETRY
     last_error: str | None  # a fixed code from anchor_errors, never raw text

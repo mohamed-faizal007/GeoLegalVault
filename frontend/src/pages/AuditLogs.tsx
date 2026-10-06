@@ -199,6 +199,14 @@ export default function AuditLogs() {
                         </button>
                       </>
                     )}
+                    {entry.redacted && (
+                      <span
+                        title="Details withheld: this record concerns a document above your clearance."
+                        className="ml-2 inline-flex items-center rounded-full bg-white/5 px-2 py-0.5 text-xs font-medium text-faint ring-1 ring-inset ring-white/10"
+                      >
+                        details hidden
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5">
                     <span

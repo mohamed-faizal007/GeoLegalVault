@@ -4,11 +4,27 @@ import { Fragment, useState, type FormEvent } from "react";
 import { listGeofences } from "../../api/geofences";
 import { createUser, listUsers, updateUser, type UserOut } from "../../api/users";
 import { useAuth } from "../../context/useAuth";
+import { LEVELS, levelLabel } from "../../lib/classification";
 import { ROLES } from "../../lib/permissions";
 import ErrorBanner from "../ErrorBanner";
 import Spinner from "../Spinner";
 
 const ROLE_OPTIONS = Object.values(ROLES);
+
+function ClearanceOptions() {
+  return (
+    <>
+      {LEVELS.map((level) => (
+        <option key={level} value={level}>
+          {levelLabel(level)}
+        </option>
+      ))}
+    </>
+  );
+}
+
+const CLEARANCE_HELP =
+  "Decides which documents this person can open: this level and everything below. This is access control inside the application, not encryption.";
 
 interface FenceOption {
   id: string;
@@ -33,9 +49,18 @@ function UserEditForm({
   const [name, setName] = useState(user.name);
   const [role, setRole] = useState<string>(user.role);
   const [fenceIds, setFenceIds] = useState<string[]>(user.assigned_geofence_ids);
+  const [clearance, setClearance] = useState<string>(user.clearance);
 
   const mutation = useMutation({
-    mutationFn: () => updateUser(user.id, { name, role, assigned_geofence_ids: fenceIds }),
+    // `clearance` is sent only when it changed, so editing one's own name is never refused
+    // because of a field that did not move (the server refuses any change to one's own).
+    mutationFn: () =>
+      updateUser(user.id, {
+        name,
+        role,
+        assigned_geofence_ids: fenceIds,
+        ...(clearance !== user.clearance ? { clearance } : {}),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
       onDone();
@@ -70,6 +95,20 @@ function UserEditForm({
             </option>
           ))}
         </select>
+      </div>
+      <div>
+        <select
+          aria-label="Clearance"
+          value={clearance}
+          disabled={isSelf}
+          onChange={(e) => setClearance(e.target.value)}
+          className="input"
+        >
+          <ClearanceOptions />
+        </select>
+        <p className="mt-1 text-xs text-faint">
+          {isSelf ? "You can't change your own clearance." : CLEARANCE_HELP}
+        </p>
       </div>
       {isSelf && (
         <p className="text-xs text-faint">You can't change your own role or deactivate yourself.</p>
@@ -120,15 +159,17 @@ export default function UserManagementPanel() {
   const [name, setName] = useState("");
   const [role, setRole] = useState<string>(ROLES.AUTHORIZED_STAFF);
   const [fenceIds, setFenceIds] = useState<string[]>([]);
+  const [clearance, setClearance] = useState<string>("PUBLIC");
 
   const createMutation = useMutation({
     mutationFn: () =>
-      createUser({ email, password, name, role, assigned_geofence_ids: fenceIds }),
+      createUser({ email, password, name, role, assigned_geofence_ids: fenceIds, clearance }),
     onSuccess: () => {
       setEmail("");
       setPassword("");
       setName("");
       setFenceIds([]);
+      setClearance("PUBLIC");
       queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
     },
   });
@@ -183,6 +224,17 @@ export default function UserManagementPanel() {
               </option>
             ))}
           </select>
+          <div>
+            <select
+              aria-label="Clearance"
+              value={clearance}
+              onChange={(e) => setClearance(e.target.value)}
+              className="input"
+            >
+              <ClearanceOptions />
+            </select>
+            <p className="mt-1 text-xs text-faint">{CLEARANCE_HELP}</p>
+          </div>
         </div>
         <div>
           <p className="mb-1 text-xs font-medium text-muted">Assigned geofences</p>
@@ -221,6 +273,7 @@ export default function UserManagementPanel() {
                 <th className="px-4 py-2.5 font-medium">Email</th>
                 <th className="px-4 py-2.5 font-medium">Name</th>
                 <th className="px-4 py-2.5 font-medium">Role</th>
+                <th className="px-4 py-2.5 font-medium">Clearance</th>
                 <th className="px-4 py-2.5 font-medium">Geofences</th>
                 <th className="px-4 py-2.5 font-medium">Active</th>
                 <th className="px-4 py-2.5 font-medium" />
@@ -235,6 +288,7 @@ export default function UserManagementPanel() {
                       <td className="px-4 py-2.5">{u.email}</td>
                       <td className="px-4 py-2.5">{u.name}</td>
                       <td className="px-4 py-2.5 text-muted">{u.role}</td>
+                      <td className="px-4 py-2.5 text-muted">{levelLabel(u.clearance)}</td>
                       <td className="px-4 py-2.5">
                         {u.assigned_geofence_ids.length === 0 ? (
                           <span
@@ -281,7 +335,7 @@ export default function UserManagementPanel() {
                     </tr>
                     {editingId === u.id && (
                       <tr>
-                        <td colSpan={6} className="p-0">
+                        <td colSpan={7} className="p-0">
                           <UserEditForm
                             user={u}
                             fences={fenceOptions}

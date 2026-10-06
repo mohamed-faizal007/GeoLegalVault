@@ -37,6 +37,7 @@ const user = (over: Record<string, unknown>) => ({
   name: "Staff",
   role: "AUTHORIZED_STAFF",
   assigned_geofence_ids: [],
+  clearance: "CONFIDENTIAL",
   is_active: true,
   created_at: "2026-01-01T00:00:00Z",
   last_login: null,
@@ -102,5 +103,63 @@ describe("UserManagementPanel editing", () => {
 
     await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
     expect(screen.getByLabelText("Role")).toBeDisabled();
+  });
+
+  it("shows a Clearance column with a readable level", async () => {
+    renderPanel([user({ clearance: "TOP_SECRET" }), user({ id: "u-2", email: "b@example.com" })]);
+    expect(await screen.findByRole("columnheader", { name: "Clearance" })).toBeInTheDocument();
+    const row = screen.getByText("staff@example.com").closest("tr")!;
+    expect(within(row).getByText("Top secret")).toBeInTheDocument();
+    expect(
+      within(screen.getByText("b@example.com").closest("tr")!).getByText("Confidential"),
+    ).toBeInTheDocument();
+  });
+
+  it("creates a user at PUBLIC unless a level is chosen, and says it is not encryption", async () => {
+    renderPanel([]);
+    const select = (await screen.findAllByLabelText("Clearance"))[0] as HTMLSelectElement;
+    expect(select.value).toBe("PUBLIC");
+    expect(screen.getAllByText(/not encryption/i).length).toBeGreaterThan(0);
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Public",
+      "Internal",
+      "Confidential",
+      "Restricted",
+      "Top secret",
+    ]);
+  });
+
+  it("sends clearance only when it changed", async () => {
+    updateUserMock.mockResolvedValue(user({}));
+    renderPanel([user({})]);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    expect(updateUserMock).toHaveBeenLastCalledWith("u-1", {
+      name: "Staff",
+      role: "AUTHORIZED_STAFF",
+      assigned_geofence_ids: [],
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await userEvent.selectOptions(
+      within(screen.getByRole("table")).getByLabelText("Clearance"),
+      "RESTRICTED",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    expect(updateUserMock).toHaveBeenLastCalledWith("u-1", {
+      name: "Staff",
+      role: "AUTHORIZED_STAFF",
+      assigned_geofence_ids: [],
+      clearance: "RESTRICTED",
+    });
+  });
+
+  it("disables the clearance select on the administrator's own row", async () => {
+    renderPanel([user({ id: "admin-1", email: "admin@example.com", role: "ADMINISTRATOR" })]);
+    const row = (await screen.findByText("admin@example.com")).closest("tr")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
+    expect(within(screen.getByRole("table")).getByLabelText("Clearance")).toBeDisabled();
+    expect(screen.getByText("You can't change your own clearance.")).toBeInTheDocument();
   });
 });

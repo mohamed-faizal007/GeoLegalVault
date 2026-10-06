@@ -17,6 +17,7 @@ import Spinner from "../components/Spinner";
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/useAuth";
 import { getCurrentLocation } from "../hooks/useGeoLocation";
+import { levelLabel } from "../lib/classification";
 import { formatDateTime } from "../lib/format";
 import { hasPermission, PERMISSIONS } from "../lib/permissions";
 import { isClearableFlag, UNCONFIRMED_BANNER } from "../lib/verification";
@@ -189,7 +190,7 @@ export default function DocumentDetails() {
           {doc.integrity_flag === "UNCONFIRMED" && <StatusBadge status="UNCONFIRMED" />}
         </div>
         <p className="mt-0.5 text-sm text-muted">
-          {doc.doc_type} — {doc.classification}
+          {doc.doc_type} — {levelLabel(doc.classification)}
         </p>
       </div>
 

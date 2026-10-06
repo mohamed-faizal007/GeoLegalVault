@@ -6,6 +6,8 @@ export interface UserOut {
   name: string;
   role: string;
   assigned_geofence_ids: string[];
+  /** Which documents this user may open: this level and below (D-051). */
+  clearance: string;
   is_active: boolean;
   created_at: string;
   last_login: string | null;
@@ -24,12 +26,15 @@ export interface UserCreate {
   name: string;
   role: string;
   assigned_geofence_ids?: string[];
+  clearance?: string;
 }
 
 export interface UserUpdate {
   name?: string;
   role?: string;
   assigned_geofence_ids?: string[];
+  /** Send only when it changed: the server refuses any clearance change to one's own account. */
+  clearance?: string;
   is_active?: boolean;
 }
 

@@ -401,12 +401,12 @@ async def attention_items(
             )
             last_error = failed.get("error") if failed else None
 
+        visible = can_see(viewer, document.get("classification"))
         items.append(
             {
                 "document_id": str(document["_id"]),
-                "title": document["title"]
-                if can_see(viewer, document.get("classification"))
-                else HIDDEN_TITLE,
+                "title": document["title"] if visible else HIDDEN_TITLE,
+                "title_hidden": not visible,
                 "version_no": version["version_no"],
                 "state": label,
                 "last_error": codes.public_error(last_error),

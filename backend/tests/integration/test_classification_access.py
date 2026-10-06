@@ -713,6 +713,7 @@ async def test_the_stuck_anchor_list_withholds_titles_above_clearance_but_retry_
     (item,) = low.json()["items"]
     assert item["document_id"] == document_id
     assert item["title"] == HIDDEN_TITLE
+    assert item["title_hidden"] is True
     assert SECRET_TITLE not in low.text
 
     retried = await client.post(
@@ -722,7 +723,11 @@ async def test_the_stuck_anchor_list_withholds_titles_above_clearance_but_retry_
     )
     assert retried.status_code == 200, retried.text
     assert SECRET_TITLE not in retried.text
+    rows = await db["audit_logs"].find({"action": "ANCHOR_RETRY_REQUESTED"}).to_list(10)
+    assert [str(r["target_id"]) for r in rows] == [document_id]  # audited exactly once
+    assert rows[0]["result"] == "SUCCESS"
 
     await db["users"].update_one({"email": "admin@example.com"}, {"$set": {"clearance": TS}})
     cleared = (await client.get(ATTENTION, headers=_auth(ctx["admin"]))).json()["items"]
     assert [i["title"] for i in cleared] == [SECRET_TITLE]
+    assert [i["title_hidden"] for i in cleared] == [False]

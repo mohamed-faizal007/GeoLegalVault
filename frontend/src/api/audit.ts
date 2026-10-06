@@ -10,6 +10,8 @@ export interface AuditLogOut {
   ip: string | null;
   location: { type: string; coordinates: number[] } | null;
   meta: Record<string, unknown>;
+  /** True when `meta` was withheld: the target is a document above the viewer's clearance. */
+  redacted: boolean;
   created_at: string;
 }
 
