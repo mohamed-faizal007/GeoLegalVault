@@ -283,9 +283,68 @@ Guardrail #8).
 
 ---
 
+## 13. Document access is decided by clearance, in one place — a hidden document is a 404
+
+Every document carries one of five ordered levels (`PUBLIC < INTERNAL < CONFIDENTIAL < RESTRICTED <
+TOP_SECRET`), fixed at upload. Every user carries a clearance of the same kind. A document is visible
+to a user only if the user's clearance reaches its level. Anything that is not a known level, on either
+side, is the lowest clearance / hidden from everyone (deny-by-default).
+
+**Why:** before this, any role holding `document:view` could list, open and download any document, and
+the `classification` field was decoration. A rule that lives in each route is a rule that one future route
+forgets; one that answers 403 tells a caller the document exists.
+
+**Enforced at:**
+- [`backend/app/core/clearance.py`](backend/app/core/clearance.py) (`can_see`, `visible_classifications`) and
+  [`backend/app/modules/documents/access.py`](backend/app/modules/documents/access.py) (`load_visible_document`,
+  `resolve_visible_version`) are the **one enforcement point**. Every route that takes a document or version id
+  resolves it through them; lists, search, counts and reports filter in the query with
+  `visible_classifications`, so a hidden document is never fetched and then dropped.
+- **404, not 403.** A document above the caller's clearance gets the same status and body as an id that does not
+  exist (`document_not_found`, [`access.py:88`](backend/app/modules/documents/access.py#L88)); 403 stays for "your
+  role lacks the permission", which says nothing about any document. The refused attempt is audited as
+  `ACCESS_DENIED` only when the document exists, so the log cannot be flooded with made-up ids and the caller
+  cannot tell the cases apart. Order is unchanged (#5): the check sits inside the loader, after JWT, RBAC and
+  geofence, before the action and before any pre-signed URL.
+- **Clearance is never self-service.** Only an Administrator (`users:manage`) sets it, audited old -> new, and
+  nobody can change their own ([`users/service.py:125`](backend/app/modules/users/service.py#L125),
+  `403 SELF_CLEARANCE_CHANGE`); a lone administrator is set out-of-band. A new user starts at `PUBLIC`. You can
+  only upload at or below your own clearance. Classification is immutable after upload
+  (`CLASSIFICATION_IMMUTABLE`), and no route changes it.
+- **No automatic content access for anyone.** An Administrator reads, verifies and archives documents only with
+  clearance like everyone else. An Auditor sees every audit row, but `meta` is blanked and the row marked
+  `redacted` when its target is above their clearance.
+- Tests: `backend/tests/integration/test_classification_access.py` (includes
+  `test_every_route_with_a_document_or_version_id_has_an_access_probe`, which fails the build when a route with a
+  `document_id`/`version_id` is not covered), `tests/unit/test_clearance.py`, and
+  `tests/integration/test_ui_leak_surface.py` (every endpoint the UI pages call, as every below-clearance role,
+  with a positive control). The browser only mirrors the server's answer and never decides (#5).
+
+**Known limits (do not claim more than this):**
+- **Not encryption.** Anyone with database, storage or service-key access sees every document. This is
+  application-level access control; #1, #4 and #6 are unchanged.
+- **Not an ethical-wall / matter model.** Clearance is one ordered number per user. It cannot say "A but not B" at
+  the same level or "this matter only"; that model (per-client/per-case membership) is open under SEC-02.
+- **Deliberate exceptions that show something about a hidden document:** the stuck-anchor list (an operational
+  alert; the title is replaced by a placeholder, `title_hidden` is set, the id and version number remain) and the
+  audit log's rows (actor, action, target id, result and IP remain; only `meta` is blanked). The anchor re-queue
+  works on a document the administrator cannot open, by design, and never contacts the chain (#3).
+- A clearance change applies on the next request, not retroactively to what was already downloaded. Timing or
+  response-size differences between "hidden" and "nonexistent" are not measured.
+- The audit log itself has no hash chain (CMP-01): redaction hides `meta` from a reader and does nothing against a
+  writer with database access.
+
+**Don't:** add a route that takes a document or version id and reads the collection directly instead of the
+loader; return 403 (or any message that differs from "not found") for a document the caller may not see; add a
+reclassify or "set my clearance" endpoint, or let the `PATCH /users` path accept a self-change; add an "N hidden"
+count or a client-side filter that makes a leak look handled; describe this as encryption, as unbypassable, or as
+a matter/ethical-wall model.
+
+---
+
 ## Before making changes
 
-Before touching **auth, geofencing, blockchain anchoring, or RBAC logic**, re-read the
+Before touching **auth, geofencing, blockchain anchoring, RBAC or document-access logic**, re-read the
 relevant guardrail(s) above and:
 
 1. Identify which numbered guardrail(s) govern the area you're changing.
