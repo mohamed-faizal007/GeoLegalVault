@@ -107,6 +107,22 @@ async def test_apply_changes_only_what_was_listed_and_never_guesses(sync_db, mon
     assert ids and uids
 
 
+async def test_audit_rows_have_the_same_shape_the_normal_path_writes(sync_db, monkeypatch, capsys):
+    ids, uids = _seed(sync_db)
+
+    _run(monkeypatch, capsys, "--apply")
+
+    rows = list(sync_db["audit_logs"].find({"action": {"$regex": "_MIGRATED$"}}))
+    assert rows
+    for row in rows:
+        assert "location" not in row  # audit.service.record never writes the key
+        expected = ids["lower"] if row["target_type"] == "document" else uids.values()
+        if row["target_type"] == "document":
+            assert row["target_id"] == expected
+        else:
+            assert row["target_id"] in expected  # an ObjectId, not str(ObjectId)
+
+
 async def test_an_explicit_mapping_is_applied_and_a_bad_level_is_refused(
     sync_db, monkeypatch, capsys
 ):

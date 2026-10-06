@@ -1586,3 +1586,30 @@ maker-checker with a cleared reviewer; the stuck-anchor title redaction.
 - **Clean worktree, no `.env`** (CI's five env vars only; its own Mongo and RustFS): the new tests (`test_classification_access`,
   `test_classification_migration`, `test_clearance`) **51 passed, exit 0**; the full suite **344 passed, exit 0, 94.26%**;
   `ruff check app tests` exit 0. Windows, not the CI runner's Ubuntu. The worktree and containers were removed.
+
+
+**Outcome of D-051 (migration applied to the dev DB, 2026-10-06).**
+- Backup verified first: `pre-sec02.archive` (157,219 bytes) was copied into the Mongo container under a temporary name and
+  `mongorestore --dryRun` listed 9 collections; the document counts, read from the archive file on the host (the dry run does not
+  count), matched the expected ones exactly (documents 45, document_versions 46, users 11, blockchain_anchors 22, audit_logs
+  285, refresh_sessions 210, verification_records 14, geofences 2, `login_rate_limits` empty). The temporary file was deleted.
+- `scripts/classification_migration.py --apply` (no flags, i.e. the built-in role defaults): 1 document ("homilivo",
+  `restricted` -> `RESTRICTED`) and 11 users (Administrator `INTERNAL` x3, Authorized Staff `CONFIDENTIAL` x2, Legal Officer
+  `RESTRICTED` x3, Reviewing Officer `RESTRICTED` x1, Auditor `RESTRICTED` x2). Nobody has `TOP_SECRET`. 12 audit rows
+  written (285 -> 297). A second `--apply` found 0 changes and wrote nothing (still 297).
+- Reachable-by-role, read-only, using the real `can_see`/`visible_classifications` and an independent count of the
+  distribution (PUBLIC 11, INTERNAL 9, CONFIDENTIAL 9, RESTRICTED 16): Administrator 20, Authorized Staff 29, Legal Officer /
+  Reviewing Officer / Auditor 45 each, all equal to the expected number. **Every one of the 45 documents is visible to at least
+  one role (0 unreachable).** The three Administrators see 20 of 45 by design (no automatic content access).
+- **Found and corrected after the apply (audit row shape).** (a) Audit rows carry **no hash chain or other integrity field**
+  (`audit/service.py:43-52` writes actor, action, target, result, ip, meta, created_at only); "append-only" is by convention (no
+  update/delete function, GET-only router, `service.py:10-14`), not cryptographic. The migration bypassed nothing that exists, but
+  note that this is a limit of the audit log, not a property of these rows. (b) The migration's rows differed from the normal path
+  in two ways: user rows stored `target_id` as `str(ObjectId)` (the normal path stores the ObjectId: 77 of the 81 user-target
+  rows; the 4 strings are failed-login emails), and every migrated row carried `"location": null`, which `audit/service.py:53-57`
+  says is never written because of the 2dsphere index. The API, filter and UI were fine with either type
+  (`service.py:62-70` matches both, `to_out` stringifies, the UI treats it as text). `hidden_row_ids` (`service.py:87`) only
+  recognises an ObjectId target, which is a reason to keep document targets typed (the migrated document row already was), not
+  an exposure here: user-target rows are never redacted. The script now writes the ObjectId and omits `location`; a regression test pins the shape; the 11 user
+  rows (matched on action, actor `SYSTEM`, string target) and the 1 document row were corrected in place, an exceptional edit
+  to an append-only log that you authorised, limited to those 12 rows. Count unchanged (297).

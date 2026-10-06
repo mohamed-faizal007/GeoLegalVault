@@ -182,7 +182,6 @@ def main() -> None:
                 "target_id": change["id"],
                 "result": "SUCCESS",
                 "ip": None,
-                "location": None,
                 "meta": {"from": change["from"], "to": change["to"], "how": change["how"]},
                 "created_at": now,
             }
@@ -194,10 +193,9 @@ def main() -> None:
                 "actor_id": "SYSTEM",
                 "action": "CLEARANCE_MIGRATED",
                 "target_type": "user",
-                "target_id": str(change["id"]),
+                "target_id": change["id"],
                 "result": "SUCCESS",
                 "ip": None,
-                "location": None,
                 "meta": {"from": change["from"], "to": change["to"], "how": change["how"]},
                 "created_at": now,
             }
