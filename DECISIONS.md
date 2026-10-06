@@ -1672,3 +1672,44 @@ loader (`blockchain/router.py:105-133`), so it works on a document the admin can
 **Limits.** The browser never enforces anything; a user can call the API directly and gets the same server answers. The upload
 select cannot warn about a level above the user's clearance until the server refuses it. The reference shown for a hidden
 document is an id fragment the viewer could already read in the audit log.
+
+
+**Outcome of D-052 (UI stage, 2026-10-06).**
+- **Built as decided (all six points and the stated limits).** `lib/classification.ts` (the five levels and labels, a mirror of
+  the server list that only fills selects); Upload: required select, none preselected; user management: Clearance column,
+  create/edit selects, own row disabled, `clearance` sent only when changed; audit page: "details hidden" marker on `redacted`
+  rows, targets still filter buttons; anchor banner: `title_hidden` (backend, one field), placeholder as plain text with
+  `ref <last 8 of the id>`, no link, retry unchanged, notice without the title; fixed text for the four new error codes and one
+  wording for hidden and missing. Backend: `title_hidden` on the attention item; `ITEM_KEYS` in `test_anchor_attention.py` (the
+  allow-list that stops secrets being added to that item) now includes it, deliberately; the retry-on-a-hidden-document test now
+  also asserts exactly one `ANCHOR_RETRY_REQUESTED` row.
+- **Small deviations to be aware of.** (1) The shared 404 text says "item", not "document" ("That item couldn't be found, or you
+  don't have access to it."), because the code `HTTP_404` is also what other 404s carry (e.g. a user id); the hidden/missing
+  document case still has one wording. (2) The Upload labels had no `for`/`id`, so the new tests could not find the fields; I
+  added `htmlFor`/`id` to Title, Document type and Classification (an accessibility fix in a form already being edited).
+  (3) The document page now shows the classification as a label ("Restricted").
+- **Leak check, run against the real backend code** (`tests/integration/test_ui_leak_surface.py`, the ASGI app with the real
+  routers against the throwaway `geolegalvault_test` database; **nothing was written to the dev database and no user was added
+  to it**). One TOP_SECRET document with a distinctive title, tags, review comment, anchor hash, storage key and ids; five
+  below-clearance users (Staff, Reviewer, Officer, Auditor, Administrator, all at INTERNAL) call every endpoint the UI pages use:
+  dashboard total / my drafts / queue / recent, repository filters, search by title and by tag, owner + type, document page,
+  version history, verification (run and history), blockchain page, the anchor-attention list, reports, and the audit log.
+  **Result: no response contained any of the eight markers, for any of the five users; each list showed only the PUBLIC
+  document (`total` 1); the audit rows for the hidden document were present but `redacted: true` with `meta == {}`.** A positive
+  control (a TOP_SECRET-cleared officer making the same calls) does contain the markers, so the empty result is the data being
+  withheld and not the markers being unfindable. Places checked, per the brief: dashboard counts and recent documents, repository
+  filters, banner titles, version history, the verification page, the audit log's target links (the UI renders them as filter
+  buttons, never links, and `target_id` is shown only for rows the viewer may see by D-051).
+- **Not checked.** No browser click-through (the UI behaviour is covered by vitest with the API mocked; the leak check covers the
+  server answers the pages receive, not the rendered pages); no running uvicorn against the dev database; no measurement of
+  timing differences; the audit log still has no integrity field (PRODUCTION_READINESS CMP-01, proposed, not built).
+- **Verification (exit codes).** Frontend: `tsc --noEmit` 0, `eslint .` 0, `vitest run` 0 (21 files, 127 tests), `npm run build` 0.
+  Backend with the owner's `.env`: 345 passed, 1 failed (`test_attention_item_shape_state_and_no_secrets`: my own
+  `title_hidden` field against the pinned key set; fixed), 94.27%; `ruff check app tests` 0. **Clean worktree, no `.env`**
+  (CI's five variables only, a separate throwaway Mongo and RustFS on other ports): first run 343 passed, 3 failed, which was
+  my setup, not the code (the pre-signed URL host `STORAGE_PUBLIC_ENDPOINT` defaults to `localhost:9000`, the dev store, so the
+  tests fetched from the wrong server); with it set, the three pass alone and the **full suite then ran 346 passed, 0 failed,
+  94.27%**, Windows, not the CI runner. (The wrapper did not capture the process exit code of that last run; the pass/fail line
+  is pytest's own.) The worktree and both throwaway containers were removed; the dev stack was not touched. Note for later:
+  the comment at `config.py:41-44` says `STORAGE_PUBLIC_ENDPOINT` "defaults to STORAGE_ENDPOINT", but the code default is the
+  literal `http://localhost:9000`; harmless in CI (same value), a trap for anyone running on other ports.
