@@ -19,12 +19,13 @@ over the network rather than to mocks of them. This is a deliberate choice: the 
 parts of this system (the 3-way hash comparison, the anchor/confirm/promote sequence) are
 exactly the parts a mock would be most likely to over-simplify.
 
-## Current results (this codebase, as of Phase 12)
+## Current results (updated 2026-10-07; first written at Phase 12)
 
 ```
-backend:    118 tests passed, 92.4% line coverage (gate: 60%)
-contracts:  Hardhat test suite passing (anchor / re-anchor-reverts / onlyWriter / getAnchor / setWriter)
-frontend:   Vitest suite passing (Login, FileDropzone, Verification result rendering)
+backend:    346 tests, 94.27% line coverage (gate: 60%)  [last recorded full run, DECISIONS.md D-052;
+            346 re-counted with `pytest --collect-only` on 2026-10-07, suite not re-run that day]
+contracts:  10 Hardhat test cases (anchor / re-anchor-reverts / onlyWriter / getAnchor / setWriter)  [counted, 2026-10-07]
+frontend:   127 Vitest tests in 21 files, all passing  [run 2026-10-07]
 ```
 Reproduce locally:
 ```bash

@@ -1713,3 +1713,16 @@ document is an id fragment the viewer could already read in the audit log.
   is pytest's own.) The worktree and both throwaway containers were removed; the dev stack was not touched. Note for later:
   the comment at `config.py:41-44` says `STORAGE_PUBLIC_ENDPOINT` "defaults to STORAGE_ENDPOINT", but the code default is the
   literal `http://localhost:9000`; harmless in CI (same value), a trap for anyone running on other ports.
+
+## 2026-10-07 — Docs-only: correct stale statements found by the PROJECT_EXPLAINED review
+
+### D-053 — Bring README, TEST_PLAN, DEMO_SCRIPT, PROJECT_ANALYSIS, CLAUDE.md #5 and .env.example in line with the code
+**Decision:** documentation edits only, no code, config, database or Docker change.
+- README and `docs/TEST_PLAN.md`: test counts now 346 backend, 127 frontend, 10 contract cases, dated 2026-10-07 and marked recorded vs. re-counted. README now says where the shared demo password lives (`scripts/seed.py` `DEMO_PASSWORD`, `docs/DEMO_SCRIPT.md`), without repeating it.
+- `docs/DEMO_SCRIPT.md`: Authorized Staff uploads, Reviewing Officer reviews, Legal Officer approves (V1 and V2). The old order had the Legal Officer upload and approve, which `enforce_maker_checker` refuses. The "encrypted at rest" claim is replaced by the `THREAT_MODEL.md` position (R2 encrypts, local RustFS does not, the app does not).
+- `PROJECT_ANALYSIS.md`: marked a snapshot; corrected "CLAUDE.md empty", MinIO (now RustFS, D-034) and the in-memory login limiter (now Mongo-backed; only the global per-IP limiter is in-memory).
+- `CLAUDE.md` #5 and `PROJECT_ANALYSIS.md`: list download and the anchor re-queue as geofenced, as the routers already do.
+- `.env.example`: comment that any Sepolia RPC works; the URL is an example shape only.
+**Why:** a faculty-facing review found each of these contradicted the code. Guardrail #6 (no overstated claims) and CLAUDE.md "treat a mismatch as a bug".
+**Guardrails touched:** #5 (documentation of which routes are geofenced), #6.
+**Not doing:** rewriting `PRODUCTION_READINESS.md` (still partly stale, its per-finding Update notes are the record); changing `config.py` defaults; editing the demo run-book; the untracked `demo/` and `DEMO_RUNBOOK.md` are not part of this change. The frontend/contract counts were not re-run for this edit beyond the figures stated (frontend run and contract count on 2026-10-07; backend full suite not re-run).

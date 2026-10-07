@@ -1,5 +1,7 @@
 # PROJECT_ANALYSIS.md — GeoLegalVault
 
+> **Snapshot, not current.** Written early in the project and not maintained since. Known stale statements, corrected in place below and in `docs/PROJECT_EXPLAINED.md` (2026-10-07): `CLAUDE.md` is **not** empty (it holds 13 guardrails); local dev and CI storage is **RustFS**, not MinIO (D-034); login rate limiting is **MongoDB-backed** (`login_rate_limits`), not in-memory (the separate global per-IP limiter is still in-memory); geofencing also covers **download** and the **anchor re-queue**; test counts are now 346 backend / 127 frontend / 10 contract cases. Other details (versions, file line numbers, counts) may also have drifted. `DECISIONS.md` and `CLAUDE.md` are authoritative.
+
 *Full from-scratch codebase analysis. Written as a persistent reference; paths are repo-relative unless stated otherwise.*
 
 ---
@@ -10,7 +12,7 @@
 
 GeoLegalVault is a **geospatially-aware legal document integrity and lifecycle platform**. It lets an organization with a fixed physical location (e.g. a government registry office, a law firm HQ) manage sensitive legal documents through a controlled lifecycle (draft → submit → review → approve → blockchain-anchor → active → amend/archive), while enforcing two independent trust guarantees:
 
-1. **Geofencing** — sensitive operations (upload, approve, amend) can only be performed by a user physically present inside an assigned GPS polygon, enforced **server-side** (never trusting a client-asserted allow/deny flag).
+1. **Geofencing** — sensitive operations (upload, download, approve, amend, and the administrator anchor re-queue) can only be performed by a user physically present inside an assigned GPS polygon, enforced **server-side** (never trusting a client-asserted allow/deny flag).
 2. **Blockchain-anchored tamper detection** — every approved document version's SHA-256 hash is written to a minimal Ethereum smart contract (Sepolia testnet). A 3-way verification loop later recomputes the hash from the actual stored bytes and compares it against both the database record and the on-chain record, so neither a database compromise nor a storage compromise alone can produce a false "verified" result.
 
 Target users are the five RBAC roles seeded in the demo data: **Legal Officer**, **Authorized Staff**, **Reviewing Officer**, **Auditor**, **Administrator** — modeling a real maker-checker legal workflow (e.g. a land-records or contracts office) rather than a generic DMS.
@@ -25,7 +27,7 @@ The project explicitly avoids overclaiming: `README.md` and `CLAUDE.md`/`docs/IM
 | Frontend | React 18.3.1, TypeScript 5.7, Vite 6.0.5, React Router 7.0.2, TanStack Query 5.62, Tailwind CSS 3.4.17, Vitest 4.1.11 + Testing Library |
 | Smart contract | Solidity ^0.8.20, Hardhat 2.22.10 + `@nomicfoundation/hardhat-toolbox` 5, TypeScript, deployed to Ethereum **Sepolia** testnet |
 | Database | MongoDB 7 (with 2dsphere geospatial indexes for geofence polygons, text index for document search) |
-| Object storage | S3-compatible — MinIO for local dev, **Cloudflare R2** in production |
+| Object storage | S3-compatible — RustFS for local dev and CI (MinIO before D-034), **Cloudflare R2** in production |
 | Infra/deploy | Docker + docker-compose (local), Render (backend), Vercel (frontend), MongoDB Atlas M0 (prod DB), Sentry (optional error tracking) |
 | CI | GitHub Actions (`.github/workflows/ci.yml`) — three parallel jobs: backend (pytest+ruff), contracts (Hardhat test), frontend (eslint+vitest+build) |
 
@@ -50,7 +52,7 @@ The project explicitly avoids overclaiming: `README.md` and `CLAUDE.md`/`docs/IM
               ▼                      ▼                     ▼
      ┌────────────────┐   ┌──────────────────┐   ┌──────────────────────┐
      │ MongoDB 7       │   │ S3-compatible     │   │ web3.py → Sepolia RPC │
-     │ (Motor async)   │   │ storage (MinIO/R2)│   │ (Alchemy) → service   │
+     │ (Motor async)   │   │ storage (RustFS/R2)│   │ (RPC provider) → svc  │
      │ 2dsphere/text    │   │ encrypted bucket, │   │ wallet signs anchor() │
      │ indexes          │   │ server-generated  │   │ tx on DocumentAnchor  │
      │ documents,       │   │ keys, presigned    │   │ .sol contract         │
@@ -133,10 +135,10 @@ GeoLegalVault/
 │                              DEPLOYMENT, USER_GUIDE, DEVELOPER_GUIDE, RESEARCH, DEMO_SCRIPT,
 │                              GeoLegalVault_Project_Plan.md, IMPLEMENTATION_PROMPT.md, info.md
 │
-├── docker-compose.yml         mongo, minio, minio-init, hardhat-node (placeholder), backend
+├── docker-compose.yml         mongo, storage (RustFS), storage-init, hardhat-node (placeholder), backend, plus the opt-in anchor-worker
 ├── .env.example / frontend/.env.example
 ├── .github/workflows/ci.yml   backend / contracts / frontend jobs
-└── CLAUDE.md                  EMPTY (0 bytes) — see Current State
+└── CLAUDE.md                  the 13 guardrails (was empty when this snapshot was written)
 ```
 
 ### Entry points
@@ -152,7 +154,7 @@ GeoLegalVault/
 2. **Lifecycle** (`documents/workflow.py`, a hand-rolled state machine): `submit()` (owner only, DRAFT→SUBMITTED) → `review()` (reviewer ≠ uploader enforced via `enforce_maker_checker`, SUBMITTED→UNDER_REVIEW→PENDING_APPROVAL or →CHANGES_REQUESTED→DRAFT) → `approve()` (approver ≠ uploader, PENDING_APPROVAL→APPROVED, **then automatically anchors on-chain** — no user-triggered "anchor" endpoint exists anywhere) → `promote_confirmed_anchor()` (APPROVED→BLOCKCHAIN_ANCHORED→ACTIVE once confirmed, retires the previously-ACTIVE version to SUPERSEDED without mutating it) → `request_amendment()` (ACTIVE→AMENDMENT_REQUESTED) → new upload creates V(n+1) → `archive()` (ACTIVE→ARCHIVED, hides from default `list_documents` but retains all versions/anchors, see `documents/service.py:200-206`).
 3. **Anchoring** (`services/blockchain.py`): builds/signs/sends `anchor(documentId, version, sha256Bytes32, eventType)` tx with the single **service wallet** (nonce-serialized via an `asyncio.Lock`), retried up to `ANCHOR_MAX_ATTEMPTS`, polled for confirmation up to `ANCHOR_CONFIRM_POLL_ATTEMPTS` times; on any failure the document simply stays `APPROVED` with `anchor_pending_alert=True` rather than the request erroring — `documents/workflow.py::approve()` never raises on chain failure (comment at lines 218-219 makes this explicit).
 4. **Verification** (`verify/service.py::verify_version`, the product's headline feature): reads the actual current bytes from storage → recomputes SHA-256 → reads the on-chain hash live via `chain.get_onchain_anchor()` → compares recomputed vs. stored-in-Mongo vs. on-chain using constant-time `hmac.compare_digest` → returns `VERIFIED` / `MISMATCH` / `NOT_ANCHORED`. A `MISMATCH` permanently flags the document `integrity_flag="TAMPERED"` (only clearable by hand, never automatically, `documents/service.py:262-271`).
-5. **Geofencing** (`services/geofence.py::require_geofence` FastAPI dependency, used on upload/approve/amend routes): extracts `{lat,lng,accuracy,timestamp}` from either `X-Geo-*` headers or the request body, validates ranges, **fails closed** on accuracy > `GEO_ACCURACY_MAX_M` (422) or staleness > `GEO_FRESHNESS_MAX_SEC` (422), then runs a real MongoDB `$geoIntersects` query against the user's `assigned_geofence_ids`. A denial is itself audit-logged (`GEOFENCE_DENIED`).
+5. **Geofencing** (`services/geofence.py::require_geofence` FastAPI dependency, used on the upload, download, approve, amend and anchor re-queue routes): extracts `{lat,lng,accuracy,timestamp}` from either `X-Geo-*` headers or the request body, validates ranges, **fails closed** on accuracy > `GEO_ACCURACY_MAX_M` (422) or staleness > `GEO_FRESHNESS_MAX_SEC` (422), then runs a real MongoDB `$geoIntersects` query against the user's `assigned_geofence_ids`. A denial is itself audit-logged (`GEOFENCE_DENIED`).
 6. **Audit** (`audit/service.py`, `audit/router.py`): every significant action across every module calls `audit.record(...)`; the router only exposes read/query endpoints (`GET`), gated to `Auditor`/`Administrator` via `AUDIT_VIEW` permission — there is no update or delete route, enforcing append-only by omission rather than a DB-level immutability guarantee.
 7. **RBAC** (`core/rbac.py`): a deny-by-default permission map (`ROLE_PERMISSIONS`) keyed by 5 roles → permission-string sets; the `require(permission)` FastAPI dependency reads the role from the **freshly loaded DB user**, not the JWT payload, so a role change/deactivation takes effect on the very next request rather than waiting for token expiry (`rbac.py:83-86`). `enforce_maker_checker` is the shared primitive behind maker≠checker on both review and approve.
 
@@ -164,7 +166,7 @@ GeoLegalVault/
 | `frontend/.env` / `.env.example` | `VITE_API_BASE_URL` (only one var). |
 | `backend/app/core/config.py` | Pydantic-settings `Settings` class; **fails fast outside `development`** if any of `JWT_SECRET`, `MONGODB_URI`, `STORAGE_ACCESS_KEY`/`SECRET_KEY`, `SEPOLIA_RPC_URL`, `SERVICE_WALLET_PRIVATE_KEY`, `CONTRACT_ADDRESS` is still a placeholder (`"change_me"`/`"0xCHANGE_ME"`/empty/contains "CHANGE_ME"). Resolves `.env` via an **absolute** repo-root path (`Path(__file__).resolve().parents[3]`), explicitly to avoid CWD-relative surprises. |
 | `backend/pyproject.toml` | Ruff (`E,F,I,UP,B` rules, line-length 100) + pytest config (`--cov=app --cov-fail-under=60`, session-scoped asyncio loop, `app/workers/*` excluded from coverage). |
-| `docker-compose.yml` | 5 services: `mongo` (7, healthcheck), `minio` + `minio-init` (one-shot bucket creation), `hardhat-node` (a **placeholder** container — just `tail -f /dev/null`, kept only so `/health` has something to probe at :8545; the *real* chain target is always Sepolia), `backend` (overrides `MONGODB_URI`/`STORAGE_ENDPOINT`/`CHAIN_RPC_URL` to Docker-internal service names). |
+| `docker-compose.yml` | 5 services: `mongo` (7, healthcheck), `storage` (RustFS; was `minio`) + `storage-init` (one-shot bucket creation), `hardhat-node` (a **placeholder** container — just `tail -f /dev/null`, kept only so `/health` has something to probe at :8545; the *real* chain target is always Sepolia), `backend` (overrides `MONGODB_URI`/`STORAGE_ENDPOINT`/`CHAIN_RPC_URL` to Docker-internal service names). |
 | `.github/workflows/ci.yml` | 3 jobs (backend/contracts/frontend); backend job additionally installs+compiles `contracts/` because `tests/integration/test_anchor.py` spins up a **real local Hardhat node**, not a mock. |
 
 ---
@@ -206,7 +208,7 @@ DevDependencies: `vite` 6.0.5 + `@vitejs/plugin-react` (build/dev server), `type
 ### External services / accounts required
 
 - **MongoDB** — Atlas M0 in prod, local Mongo 7 container in dev.
-- **S3-compatible object storage** — Cloudflare R2 in prod, MinIO in dev (console at :9001).
+- **S3-compatible object storage** — Cloudflare R2 in prod, RustFS in dev and CI (console at :9001; MinIO until D-034).
 - **Ethereum Sepolia RPC** — Alchemy (or similar) — `SEPOLIA_RPC_URL`.
 - **A funded Sepolia service wallet** — `SERVICE_WALLET_PRIVATE_KEY`; needs faucet ETH (`docs/DEPLOYMENT.md` mentions Google Cloud/Alchemy/sepoliafaucet.com faucets; `docs/info.md` and `scripts/faucet_check.py` reference this too).
 - **Sentry** (optional) — `SENTRY_DSN`, only used if set.
@@ -289,14 +291,14 @@ administrator@geolegalvault.demo      → Demo@Pass123!
 
 ### Incomplete / stubbed / notable gaps
 
-- **`CLAUDE.md` is completely empty (0 bytes)** at the repo root, despite `README.md`'s "Guardrails" section explicitly pointing to it ("see `CLAUDE.md` ... for the full list") — the referenced guardrails document does not actually exist. This is the single most obvious inconsistency in the repo.
+- **[Stale: fixed — `CLAUDE.md` now holds the guardrails.] `CLAUDE.md` was completely empty (0 bytes)** at the repo root, despite `README.md`'s "Guardrails" section explicitly pointing to it ("see `CLAUDE.md` ... for the full list") — the referenced guardrails document does not actually exist. This is the single most obvious inconsistency in the repo.
 - **`scripts/faucet_check.py` is only 1 line long** — almost certainly a stub/placeholder rather than a working faucet-balance checker, despite being referenced in the deployment workflow context. Worth opening and confirming its single line does something useful (e.g., just a `print("TODO")` or a partial import) before relying on it.
 - **`hardhat-node` in `docker-compose.yml` is an explicit placeholder** (`command: ["sh","-c","echo 'hardhat-node: placeholder...' && tail -f /dev/null"]`, lines 57-59) — it exists only so `/health` has something to probe at :8545; it is not a real chain and nothing depends on it being one. The real target is always Sepolia, or a manually-run `npx hardhat node` for local integration tests. This is documented honestly in comments, not hidden, but a newcomer skimming `docker-compose.yml` could easily assume `docker-compose up` gives them a working local chain — it does not.
 - **The optional background worker `backend/app/workers/anchor_confirmer.py`** is deliberately excluded from the coverage gate (`pyproject.toml`'s `omit = ["app/workers/*"]`) and, per `docs/TEST_PLAN.md`, not directly tested — justified as the documented "safe to leave untested first" cut-list item, since the synchronous confirm-on-approve path it duplicates *is* fully tested. Still: this is the one production code path with zero direct test coverage.
 - **ClamAV / malware scanning is explicitly not implemented** (per `docs/THREAT_MODEL.md` reference in `docs/TEST_PLAN.md:90`) — uploaded files are validated for size/MIME only, not scanned for malicious content.
 - **No end-to-end browser automation** (Playwright) and **no load/performance testing** (locust/k6) — both explicitly deferred as "Level-3/optional" per the project plan, exercised manually via `docs/DEMO_SCRIPT.md` instead.
 - No `TODO`/`FIXME`/`XXX`/`HACK`/"not implemented" markers were found anywhere in `backend/app`, `frontend/src`, or `contracts/contracts` except one benign in-code comment in `backend/app/services/storage.py:14` referencing a hypothetical `NotImplemented: KMS not configured` MinIO error string (not an actual stub in this codebase — it's describing MinIO's own error text for context).
-- Rate limiting for login attempts is an **explicit in-memory per-process stub** (`backend/app/modules/auth/service.py`, module docstring: "fine for the single-instance prototype target; a distributed deployment would need a shared store like Redis instead") — this will not work correctly if the backend is ever horizontally scaled (each process has its own counter, and a restart clears all counters).
+- **[Stale: login limiting is now MongoDB-backed and shared across instances; only the global per-IP limiter (`core/rate_limit.py`) is still in-memory.]** Rate limiting for login attempts was an **explicit in-memory per-process stub** (`backend/app/modules/auth/service.py`, module docstring: "fine for the single-instance prototype target; a distributed deployment would need a shared store like Redis instead") — this will not work correctly if the backend is ever horizontally scaled (each process has its own counter, and a restart clears all counters).
 - MongoDB Atlas network access in production may default to `0.0.0.0/0` per `docs/DEPLOYMENT.md:53-54` because Render's free-tier outbound IPs aren't static — flagged in the docs themselves as "a known trade-off, not an oversight," but still worth knowing before treating this as a hardened production system.
 
 ### Bugs / code smells noticed while reading
@@ -412,8 +414,8 @@ Requires `--demo` already run and (for meaningful amendment/tamper cases) real S
 ## 6. NEXT STEPS / IMPROVEMENT OPPORTUNITIES
 
 ### Code quality / architecture
-- **Populate `CLAUDE.md`** — it's referenced from `README.md` as the canonical guardrails document but is currently empty; either restore its content (the guardrails clearly exist conceptually, referenced throughout code comments as "Guardrail #1" through "#7") or update `README.md` to stop pointing at it.
-- **Replace the in-memory login rate limiter** (`auth/service.py`) with a shared store (Redis) before any horizontal scaling — currently documented as a known prototype limitation, but it's the kind of thing that's easy to forget until a real incident.
+- **[Done] Populate `CLAUDE.md`** — it's referenced from `README.md` as the canonical guardrails document but is currently empty; either restore its content (the guardrails clearly exist conceptually, referenced throughout code comments as "Guardrail #1" through "#7") or update `README.md` to stop pointing at it.
+- **[Done for login; the global per-IP limiter remains in-memory] Replace the in-memory login rate limiter** (`auth/service.py`) with a shared store (Redis) before any horizontal scaling — currently documented as a known prototype limitation, but it's the kind of thing that's easy to forget until a real incident.
 - **Investigate `scripts/faucet_check.py`** (1 line) — confirm whether it's a genuine stub that needs finishing, or dead code that should be removed; either way it's inconsistent with the otherwise-thorough `scripts/` directory.
 - **Consider adding schema-level idempotency protection** around `documents/workflow.py::approve()`'s anchor retry loop — currently a transient failure inside the loop leaves `anchor_pending_alert=True`, but there's no automatic backoff/re-trigger without either the optional worker running or a manual re-approve-like action; worth confirming the worker (`workers/anchor_confirmer.py`) is actually deployed in production (it's optional and untested).
 - **Tighten `list_documents`' `owner_id` fallback** (`documents/service.py:210-213`) — silently mapping an invalid id to "no results" is convenient internally but could hide client bugs; consider a 400 for a malformed `owner_id` query param instead.

@@ -5,10 +5,18 @@ Geospatially-aware document integrity & lifecycle platform. See `docs/GeoLegalVa
 
 All 12 phases are implemented: auth/RBAC, geofence enforcement, storage/hashing/versioning,
 smart-contract anchoring on Sepolia, the full lifecycle workflow, the 3-way tamper-detection
-verification loop, audit logging, the full frontend, admin/reporting, a 118-test suite with CI,
+verification loop, audit logging, the full frontend, admin/reporting, a test suite with CI (346 backend, 127 frontend, 10 contract cases as of 2026-10-07),
 and deployment docs. See `docs/` for the full documentation set — start with `docs/SRS.md` (what
 it does), `docs/DEMO_SCRIPT.md` (see it work), `docs/DEPLOYMENT.md` (ship it), and
 `docs/DEVELOPER_GUIDE.md` (work on it).
+
+## Demo accounts
+
+The five demo users (`legal_officer@geolegalvault.demo`, `authorized_staff@geolegalvault.demo`,
+`reviewing_officer@geolegalvault.demo`, `auditor@geolegalvault.demo`, `administrator@geolegalvault.demo`)
+share one demo password. It is not written in this README. It is the `DEMO_PASSWORD` constant in
+`scripts/seed.py` (created by `python scripts/seed.py --demo`) and is also given in `docs/DEMO_SCRIPT.md`.
+Do not reuse it anywhere real.
 
 ## Prerequisites
 

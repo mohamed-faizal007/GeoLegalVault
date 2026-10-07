@@ -4,23 +4,28 @@ Run this exact sequence (Plan Part 34) against the deployed stack (or `docker-co
 locally with a real Sepolia contract configured — the anchoring steps need a real chain).
 Seed the demo data first: `python scripts/seed.py --demo && python scripts/seed.py
 --seed-documents` (see `DEPLOYMENT.md` step 4). Demo credentials (all password
-`Demo@Pass123!`): `legal_officer@geolegalvault.demo`, `reviewing_officer@…`,
-`authorized_staff@…`, `auditor@…`, `administrator@…`.
+`Demo@Pass123!`): `authorized_staff@geolegalvault.demo`, `reviewing_officer@…`,
+`legal_officer@…`, `auditor@…`, `administrator@…`.
+
+**Role order (maker-checker).** The uploader of a version can never review or approve it
+(`MAKER_CHECKER_VIOLATION`), and only the Legal Officer can approve. The demo has exactly one
+Legal Officer, so **Authorized Staff uploads and submits, the Reviewing Officer reviews, the Legal
+Officer approves** (V1 and V2 alike). Never let the Legal Officer upload a document you intend to approve.
 
 Rehearse this twice before presenting it live — the DoD requires it to run end-to-end
 twice with no manual database fixes.
 
 | Min | Step | On screen |
 |---|---|---|
-| 0:00 | Log in as `legal_officer@geolegalvault.demo` on the **Login** page. | Dashboard loads with a visible **role badge** ("Legal Officer") and the sidebar shows exactly the pages that role can use. |
+| 0:00 | Log in as `authorized_staff@geolegalvault.demo` on the **Login** page. | Dashboard loads with a visible **role badge** ("Authorized Staff") and the sidebar shows exactly the pages that role can use. |
 | 0:45 | Open **Geofence Status**. | Browser prompts for location; use a real or DevTools-overridden coordinate inside the seeded "HQ Campus (demo)" polygon (`scripts/seed.py` prints the exact inside point). Page shows a green "Inside" badge with the coordinates and reported accuracy. |
 | 1:30 | Go to **Upload**, pick a small PDF/text file, fill in title/type/classification, submit. | Progress indicator → 201 response → the new document appears in the **Document Repository** with its **SHA-256 shown** on the Document Details page. |
-| 2:30 | Switch to the R2 (or MinIO) console. | Show the object under `docs/{document_id}/v1-{sha256}` — a private bucket, a server-generated key (not the original filename), encrypted at rest. |
+| 2:30 | Switch to the R2 (or local RustFS) console. | Show the object under `docs/{document_id}/v1-{sha256}` — a private bucket, a server-generated key (not the original filename), not publicly readable. (Encryption at rest is a property of Cloudflare R2 in production; local RustFS does not provide it and the application does not encrypt files itself — see `THREAT_MODEL.md`.) |
 | 3:15 | Switch to the Atlas (or `mongosh`) console. | Show the `documents` and `document_versions` documents for this upload — the `sha256` field matches what the UI showed. |
-| 4:00 | Back in the app: **Submit** → log in as `reviewing_officer@…` and **Review → Approve** → log in as `legal_officer@…` and **Approve**. | Status badge moves DRAFT → SUBMITTED → UNDER_REVIEW → PENDING_APPROVAL → APPROVED; approving is the one click that (invisibly, automatically) triggers anchoring — there is no separate "anchor" button anywhere in the UI. |
+| 4:00 | Back in the app (still Authorized Staff): **Submit** → log in as `reviewing_officer@…` and **Review → Approve** → log in as `legal_officer@…` and **Approve**. | Status badge moves DRAFT → SUBMITTED → UNDER_REVIEW → PENDING_APPROVAL → APPROVED; approving is the one click that (invisibly, automatically) triggers anchoring — there is no separate "anchor" button anywhere in the UI. |
 | 5:00 | Open **Blockchain Verification** for this version. | `blockchain_anchors` status goes PENDING → CONFIRMED; click the **Etherscan link** and show the real transaction on Sepolia (`https://sepolia.etherscan.io/tx/…`) with the anchored hash visible in the tx input data. |
-| 6:00 | On the now-ACTIVE document, click **Amend** (reason: e.g. "correcting clause wording"), then upload a corrected file as V2. Run it through Submit → Review → Approve again. | **Version History** shows V1 marked **SUPERSEDED** and V2 **ACTIVE**, both independently anchored with their own Etherscan links. |
-| 7:00 | Switch to the R2/MinIO console and **overwrite** V2's object directly (upload replacement bytes to the same key) — an action only possible with direct storage access, not through the app. | Console shows the object was modified outside the application. |
+| 6:00 | As `legal_officer@…`, click **Amend** on the now-ACTIVE document (reason: e.g. "correcting clause wording"). Then switch back to `authorized_staff@…` (who holds `document:amend`), upload the corrected file as V2 and **Submit** it. Review (Reviewing Officer) and **Approve** (Legal Officer) again. The V2 uploader must not be the approver, so do not upload V2 as the Legal Officer. | **Version History** shows V1 marked **SUPERSEDED** and V2 **ACTIVE**, both independently anchored with their own Etherscan links. |
+| 7:00 | Switch to the R2/RustFS console and **overwrite** V2's object directly (upload replacement bytes to the same key) — an action only possible with direct storage access, not through the app. | Console shows the object was modified outside the application. |
 | 7:45 | Back in the app, open **Verification** for V2 and click **Verify**. | Big **red "MISMATCH — tamper detected"** banner; the 3-way hash row shows recomputed ≠ stored/on-chain; the document's integrity flag is now set. |
 | 8:30 | Open **Verification** for V1 (never touched). | Big **green "VERIFIED"** banner — the unchanged version still passes, proving the mismatch above is specific to the tampered bytes, not a broken check. |
 | 9:00 | Open **Audit Logs** (as `auditor@…` or `administrator@…`). | Filter to this document: see `UPLOAD`, `SUBMIT`, `REVIEW_*`, `APPROVE`, `ANCHOR_OK` (×2), `AMEND_REQ`, `VERIFY_FAIL`, `VERIFY_PASS`, and the earlier `GEOFENCE_DENIED`/location events, each with actor, result, and timestamp. |
