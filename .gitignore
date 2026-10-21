@@ -47,3 +47,14 @@ backups/
 
 docs/info.md
 
+
+# demo_video outputs (large/binary) and local venv
+demo_video/.venv/
+demo_video/**/*.mp4
+demo_video/**/*.wav
+demo_video/**/*.webm
+demo_video/recordings/
+demo_video/state.json
+demo_video/build/
+demo_video/qa/
+demo_video/**/__pycache__/
