@@ -13,12 +13,15 @@ import { API_BASE_URL } from "../lib/env";
 export class ApiError extends Error {
   status: number;
   code: string;
+  /** The parsed JSON error body, for the few endpoints that add fields (e.g. login attempts). */
+  body: Record<string, unknown> | null;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, body: Record<string, unknown> | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.body = body;
   }
 }
 
@@ -60,10 +63,11 @@ async function parseErrorBody(response: Response): Promise<ApiError> {
         response.status,
         String(err.code ?? `HTTP_${response.status}`),
         String(err.message ?? "Request failed"),
+        body,
       );
     }
     if (typeof body.detail === "string") {
-      return new ApiError(response.status, `HTTP_${response.status}`, body.detail);
+      return new ApiError(response.status, `HTTP_${response.status}`, body.detail, body);
     }
     if (Array.isArray(body.detail)) {
       const first = body.detail[0] as { msg?: string } | undefined;

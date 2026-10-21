@@ -5,15 +5,30 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.core.clearance import effective_clearance
 from app.core.db import get_db
+from app.core.deps import CurrentUser
 from app.core.rbac import USERS_MANAGE, require
 from app.modules.audit import service as audit
 from app.modules.users import service
-from app.modules.users.schemas import UserCreate, UserListOut, UserOut, UserUpdate
+from app.modules.users.schemas import MeOut, UserCreate, UserListOut, UserOut, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 _require_users_manage = require(USERS_MANAGE)
+
+
+@router.get("/me", response_model=MeOut)
+async def get_me(user: CurrentUser) -> MeOut:
+    """The caller's own name, email, role and clearance (D-054). Any authenticated user; it
+    returns only their own record, so it needs no permission and discloses nothing else."""
+    return MeOut(
+        id=str(user["_id"]),
+        email=user["email"],
+        name=user["name"],
+        role=user["role"],
+        clearance=effective_clearance(user),
+    )
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)

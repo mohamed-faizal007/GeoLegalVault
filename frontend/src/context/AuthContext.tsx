@@ -1,7 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import * as authApi from "../api/auth";
-import { configureOnUnauthorized, configureRefresh, setSession, type StoredUser } from "../lib/authToken";
+import { getMe } from "../api/users";
+import {
+  configureOnUnauthorized,
+  configureRefresh,
+  getAccessToken,
+  setSession,
+  type StoredUser,
+} from "../lib/authToken";
 import { decodeAccessToken } from "../lib/jwt";
 import { AuthContext } from "./useAuth";
 
@@ -28,6 +35,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<StoredUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  /** Fill in name and email from GET /users/me. Best effort: the UI falls back to the email, then
+   * the id, so a failure here never blocks sign-in. Skipped if the session changed meanwhile. */
+  function loadProfile(base: StoredUser): void {
+    getMe()
+      .then((me) => {
+        const token = getAccessToken();
+        if (!token) return;
+        const enriched: StoredUser = { ...base, name: me.name, email: me.email };
+        setSession(token, enriched);
+        setUser((current) => (current?.id === base.id ? enriched : current));
+      })
+      .catch(() => undefined);
+  }
+
   useEffect(() => {
     async function doRefresh(): Promise<string> {
       const res = await authApi.refresh();
@@ -37,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         : null;
       setSession(res.access_token, nextUser);
       setUser(nextUser);
+      if (nextUser) loadProfile(nextUser);
       return res.access_token;
     }
 
@@ -65,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     rememberEmail(claims.sub, email);
     setSession(res.access_token, nextUser);
     setUser(nextUser);
+    loadProfile(nextUser);
   }
 
   async function logout(): Promise<void> {

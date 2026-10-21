@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.config import get_settings
@@ -46,14 +47,24 @@ async def login(
         _user, access_token, refresh_token = await service.login(
             db, payload.email, payload.password, ip=ip
         )
-    except (service.InvalidCredentials, service.AccountDisabled, service.RateLimited) as exc:
-        # Same generic message for all failure modes: no user enumeration.
-        status_code = (
-            status.HTTP_429_TOO_MANY_REQUESTS
-            if isinstance(exc, service.RateLimited)
-            else status.HTTP_401_UNAUTHORIZED
+    except service.RateLimited as exc:
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={"detail": "Invalid email or password", "retry_after_sec": exc.retry_after_sec},
+            headers={"Retry-After": str(exc.retry_after_sec)},
         )
-        raise HTTPException(status_code, detail="Invalid email or password") from exc
+    except service.InvalidCredentials as exc:
+        # Same body for a wrong password, an unknown email and a disabled account (the counter
+        # is kept for the email as typed whether or not it exists), so the count adds nothing
+        # an attacker can use to enumerate users (D-056).
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={
+                "detail": "Invalid email or password",
+                "attempts": exc.attempts,
+                "max_attempts": service.MAX_ATTEMPTS,
+            },
+        )
 
     _set_refresh_cookie(response, refresh_token)
     return AccessTokenResponse(

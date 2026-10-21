@@ -24,6 +24,7 @@ from app.modules.blockchain.models import (
     BLOCKCHAIN_ANCHORS_COLLECTION,
     ETHERSCAN_TX_BASE,
     NETWORK,
+    SEPOLIA_CHAIN_ID,
     AnchorStatus,
 )
 from app.services import blockchain as chain
@@ -32,8 +33,21 @@ from app.services.anchor_errors import classify_anchor_error, redact_secrets
 _logger = logging.getLogger(__name__)
 
 
-def etherscan_url(tx_hash: str) -> str:
+def etherscan_url(tx_hash: str) -> str | None:
+    """A block-explorer link only when the configured chain is the one that explorer indexes
+    (Sepolia). On a local node or any other chain the link would point at a transaction that
+    does not exist there, so there is none (D-057)."""
+    if get_settings().CHAIN_ID != SEPOLIA_CHAIN_ID:
+        return None
     return f"{ETHERSCAN_TX_BASE}/{tx_hash}"
+
+
+def network_label() -> str:
+    """Human label for the configured chain. Says "testnet" because Sepolia is one."""
+    chain_id = get_settings().CHAIN_ID
+    if chain_id == SEPOLIA_CHAIN_ID:
+        return "Sepolia testnet"
+    return f"Chain {chain_id} (not Sepolia; no block explorer)"
 
 
 async def create_pending_anchor(

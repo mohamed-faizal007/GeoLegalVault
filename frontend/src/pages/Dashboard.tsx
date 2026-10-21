@@ -162,7 +162,9 @@ export default function Dashboard() {
       <header className="animate-fade-up">
         <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
           <span className="text-gradient">Welcome</span>
-          <span className="text-ink">{user?.email ? `, ${user.email}` : ""}</span>
+          <span className="text-ink">
+            {user?.name || user?.email ? `, ${user.name || user.email}` : ""}
+          </span>
         </h1>
         <p className="mt-2 text-base text-muted">
           {role ? ROLE_LABELS[role] : ""} — here's what's happening across the vault.
@@ -178,7 +180,7 @@ export default function Dashboard() {
             label="Total documents"
             value={total(totalQuery)}
             loading={totalQuery.isLoading}
-            hint="Everything you can access"
+            hint="Everything you can access, archived excluded"
             icon={Files}
             to="/documents"
           />

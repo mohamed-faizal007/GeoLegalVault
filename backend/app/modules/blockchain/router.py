@@ -14,6 +14,7 @@ from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.rbac import ANCHOR_RETRY, ANCHOR_VIEW, DOCUMENT_VIEW, has_permission, require
 from app.modules.audit import service as audit
@@ -79,6 +80,8 @@ async def get_anchor(
         block_number=anchor.get("block_number"),
         contract_address=anchor["contract_address"],
         network=anchor["network"],
+        network_label=service.network_label(),
+        chain_id=get_settings().CHAIN_ID,
         status=anchor["status"],
         created_at=anchor["created_at"],
         confirmed_at=anchor.get("confirmed_at"),

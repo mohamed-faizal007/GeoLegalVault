@@ -71,6 +71,10 @@ export default function ReportsPanel() {
 
   const statusRows: StatusCount[] = documents_by_status;
   const docTypeRows: DocTypeCount[] = documents_by_doc_type;
+  // The Dashboard and the Repository leave archived documents out by default; this chart does not.
+  // Saying so here is what makes the three numbers reconcile.
+  const allDocs = statusRows.reduce((sum, r) => sum + r.count, 0);
+  const archivedDocs = statusRows.find((r) => r.status === "ARCHIVED")?.count ?? 0;
 
   return (
     <div className="space-y-6">
@@ -114,6 +118,12 @@ export default function ReportsPanel() {
           tone={geofence_denied_count > 0 ? "bad" : "default"}
         />
       </div>
+
+      <p className="text-sm text-muted" data-testid="reports-doc-total">
+        {allDocs} documents you can access in total, including {archivedDocs} archived. The Dashboard
+        and Document Repository show {allDocs - archivedDocs} because they leave archived documents
+        out unless you filter on Archived.
+      </p>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <BarChart

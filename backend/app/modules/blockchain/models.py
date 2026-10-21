@@ -5,6 +5,7 @@ from enum import IntEnum, StrEnum
 BLOCKCHAIN_ANCHORS_COLLECTION = "blockchain_anchors"
 
 NETWORK = "sepolia"
+SEPOLIA_CHAIN_ID = 11155111
 ETHERSCAN_TX_BASE = "https://sepolia.etherscan.io/tx"
 
 

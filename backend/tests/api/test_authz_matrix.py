@@ -33,6 +33,7 @@ ENDPOINTS = [
     ("GET", "/api/v1/geofences", GEOFENCE_MANAGE),
     ("GET", "/api/v1/users", USERS_MANAGE),
     ("GET", "/api/v1/audit", AUDIT_VIEW),
+    ("GET", "/api/v1/audit/actions", AUDIT_VIEW),
     ("GET", "/api/v1/reports/summary", AUDIT_VIEW),
     ("GET", "/api/v1/blockchain/anchors/attention", ANCHOR_VIEW),
 ]

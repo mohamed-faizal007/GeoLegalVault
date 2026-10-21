@@ -258,8 +258,9 @@ async def list_documents(
         page=page,
         limit=limit,
     )
+    owners = await service.owner_names(db, items)
     return DocumentListOut(
-        items=[service.to_out(doc) for doc in items], page=page, limit=limit, total=total
+        items=[service.to_out(doc, owners) for doc in items], page=page, limit=limit, total=total
     )
 
 
@@ -270,7 +271,7 @@ async def get_document(
     actor: Annotated[dict, Depends(_require_view)],
 ) -> DocumentOut:
     doc = await _get_document_or_404(db, document_id, actor, "detail")
-    return service.to_out(doc)
+    return service.to_out(doc, await service.owner_names(db, [doc]))
 
 
 @router.get("/{document_id}/download", response_model=DownloadResponse)

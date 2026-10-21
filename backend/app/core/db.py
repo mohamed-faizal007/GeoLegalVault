@@ -77,6 +77,10 @@ async def ensure_indexes() -> None:
 
     await db["audit_logs"].create_index([("actor_id", 1), ("created_at", -1)])
     await db["audit_logs"].create_index("action")
+    # The audit page sorts newest first and filters by target (a document's history) or just pages
+    # through everything; these keep each of those off a collection scan (D-055).
+    await db["audit_logs"].create_index([("created_at", -1)])
+    await db["audit_logs"].create_index([("target_id", 1), ("created_at", -1)])
     # location is only ever set on geofence-denial records (see
     # app.modules.audit.service.record); the key is never written as null,
     # so this behaves as a sparse index without needing sparse=True.

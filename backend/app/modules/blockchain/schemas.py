@@ -22,6 +22,10 @@ class AnchorOut(BaseModel):
     block_number: int | None
     contract_address: str
     network: str
+    # The chain the app is configured for now, in words, and its id (D-057). `network` above is
+    # the fixed name stored on the row and is kept for compatibility.
+    network_label: str
+    chain_id: int
     status: str
     created_at: datetime
     confirmed_at: datetime | None

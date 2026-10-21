@@ -17,6 +17,9 @@ export interface AnchorOut {
   block_number: number | null;
   contract_address: string;
   network: string;
+  /** The configured chain in words, e.g. "Sepolia testnet". */
+  network_label?: string;
+  chain_id?: number;
   status: string;
   created_at: string;
   confirmed_at: string | null;

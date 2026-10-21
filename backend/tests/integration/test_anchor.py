@@ -399,6 +399,8 @@ async def test_anchor_api_returns_stored_anchor_with_etherscan_link(client, db, 
     body = response.json()
     assert body["status"] == "PENDING"
     assert body["tx_hash"] == anchor_doc["tx_hash"]
-    assert body["etherscan_url"] == f"https://sepolia.etherscan.io/tx/{anchor_doc['tx_hash']}"
+    # The test chain is a local node, not Sepolia: no explorer link, and the label says so (D-057).
+    assert body["etherscan_url"] is None
+    assert body["network_label"].startswith("Chain ") and body["chain_id"] != 11155111
     assert body["onchain"]["exists"] is True
     assert body["onchain"]["hash"] == "0x" + "ef" * 32

@@ -1726,3 +1726,69 @@ document is an id fragment the viewer could already read in the audit log.
 **Why:** a faculty-facing review found each of these contradicted the code. Guardrail #6 (no overstated claims) and CLAUDE.md "treat a mismatch as a bug".
 **Guardrails touched:** #5 (documentation of which routes are geofenced), #6.
 **Not doing:** rewriting `PRODUCTION_READINESS.md` (still partly stale, its per-finding Update notes are the record); changing `config.py` defaults; editing the demo run-book; the untracked `demo/` and `DEMO_RUNBOOK.md` are not part of this change. The frontend/contract counts were not re-run for this edit beyond the figures stated (frontend run and contract count on 2026-10-07; backend full suite not re-run).
+
+## 2026-10-21 — Frontend/UX fixes from review: readable identities, audit filters, anchor page, login attempts
+
+### D-054 — Readable names instead of ids: resolve on the server at read time, name only for documents
+**Decision:** `GET /users/me` (any signed-in user, own record only) feeds the welcome text and header, replacing the email held in
+`sessionStorage` (which was empty after a page reload). `DocumentOut.owner_name` (name only, one batched lookup per list) and
+`AuditLogOut.actor_label`/`actor_email`/`target_label` (one batched lookup per page) are filled in when the response is built. Nothing
+stored in `audit_logs` changes.
+**Alternatives:** (1) A frontend lookup: rejected, only `users:manage` may list users, so an Auditor could not resolve anything, and widening
+`GET /users` would expose every account to every role. (2) A snapshot of the name in each audit row at write time: rejected, it changes
+`audit_logs` and ~40 call sites, has no answer for the rows already written, and freezes a wrong or since-corrected name. Its one advantage
+(a deleted user's name survives) is covered below. (3) Server-side join at read time: chosen.
+**Privacy:** an audit viewer already sees every actor id and the `USER_CREATE` rows already carry emails, so name and email there add nothing
+new. A document's owner is shown by **name only, never email**, because that response reaches everyone cleared for the document; if an
+account has no name the UI says "Unknown user" and keeps the id. A document title in an audit row is a label only where `can_see` allows
+it (the same rule as D-051), so a label can never reveal a hidden document, and the hidden-document 404 is untouched (the lookup runs after
+`load_visible_document`). Tests pin both sides, with a cleared auditor as the positive control.
+**Renamed / deleted users:** read-time means a renamed user shows the current name; a user who no longer exists shows "Unknown user" with
+the id kept as the filter label. A failed login stores the typed email as the actor, which is its own label.
+**Guardrails touched:** #13 (labels honour clearance), #5 (no change of order).
+
+### D-055 — Audit page: real filters, validated and indexed, newest first, scrolls to top
+**Found:** the backend already filtered by `actor_id`, `action`, `target_id` and dates, newest first, with paging, and the page already had
+"Clear filters"; what was missing was a way to *find* values (ids and free-text action names). The "opens mid-list" bug is that `<main>`
+is the scroll container and stays mounted across routes, so the previous page's scroll offset carried over.
+**Added:** `GET /audit/actions` (distinct action names, for a dropdown); `actor` (name/email, 2 to 100 chars, escaped, at most 50 matching users
+resolved to ids); `document_id` (24-hex only, matches the document and all its versions). All filter strings now have length caps and
+`action`/`result`/`target_type` a character whitelist (422 otherwise). New indexes `created_at -1` and `(target_id, created_at -1)`. The UI uses a
+real action dropdown, an actor search box, and a title search for documents through the ordinary clearance-filtered `GET /documents?query=`,
+so it cannot offer a document the viewer may not open. The document page links "View audit trail" for roles with `audit:view`.
+`Layout` scrolls `<main>` to the top on each route change; the audit page does so on page change.
+**Alternatives:** a "hide noisy actions" toggle (not asked, and it would hide ACCESS_DENIED, which an auditor wants); a `/audit/actors` endpoint
+(the `actor` search covers it with no new surface).
+**Not done:** no default exclusion of LOGIN_SUCCESS/ACCESS_DENIED; the dropdown and the filters do that on request.
+
+### D-056 — Login: show "attempt X of 5", counted identically for every kind of failure
+**Decision:** a failed login returns `{"detail": "Invalid email or password", "attempts": n, "max_attempts": 5}` (the `detail` string is unchanged); a
+lockout returns 429 with `retry_after_sec` (and `Retry-After`). The counter is the existing `login_rate_limits` row, which is kept **per typed email
+whether or not that email is a user**, so unknown email, wrong password and a disabled account give the same body and the same count.
+**One change to close a leak:** a disabled account used to *not* increment the counter, so a caller who knew the password could tell "disabled" from "wrong
+password" by the count. It is now counted like any failure.
+**Enumeration check:** tests assert identical bodies for the three cases, identical counts, and an unknown email locking out at 5 exactly like a real one.
+**Not changed (observed):** the unknown-email path skips the password hash, so response *timing* can still differ. That predates this change and is not
+fixed here; it belongs with the rest of SEC hardening.
+**Alternative rejected:** a header (`X-Login-Attempts`): needs CORS `expose_headers` and is invisible to the existing error parser; the body is simpler.
+
+### D-057 — Anchor page: side-by-side hashes with a worded Match/Mismatch, explorer link only for the configured chain
+**Found:** the recorded and live hashes were in two separate cards with no comparison; the Etherscan link was built for Sepolia unconditionally, even on a
+local node (it pointed at a transaction that does not exist there); `network` is the constant `"sepolia"` stored on every row.
+**Decision:** the page shows both hashes together with Match / Mismatch / Not found on chain / Not compared, each with an icon and words. The comparison is
+display-only (case and `0x` insensitive); `GET /verify` and the anchor read are unchanged. The API adds `network_label` ("Sepolia testnet", or "Chain N (not
+Sepolia; no block explorer)") and `chain_id` from `CHAIN_ID`, and `etherscan_url` is now `null` unless `CHAIN_ID` is Sepolia. The tx hash has Copy and an explorer
+link. Two existing assertions that expected a Sepolia link on the local test chain were corrected, which is the visible effect of this decision.
+**Guardrails touched:** #6 (the label says "testnet", nothing is claimed beyond what the chain read shows).
+
+### D-058 — Dashboard banner and counts: findings, no logic change
+**Banner (read from `retry.attention_items`, `AnchorAttentionBanner`, `/health`):** a document is "stuck" when it is `APPROVED` and either flagged
+(`anchor_pending_alert` or an `anchor_retry` record) or older than `ANCHOR_ATTENTION_GRACE_SEC` (120 s) with no anchor. It is counted until it is anchored or
+leaves APPROVED, which is intended: after `ANCHOR_AUTO_RETRY_MAX_AGE_DAYS` (7) it becomes NEEDS_ADMIN_RETRY and stays visible. "Worker not running" is
+`/health` `anchor_worker == stale`: no heartbeat in `worker_heartbeats`, or one older than `ANCHOR_WORKER_STALE_SEC` (120 s). Both are correct, and the worker is
+an opt-in compose profile, so on a stack started with plain `docker compose up` the message is true. **No bug, no change.** Two limits noted, not changed: the
+scan stops at 500 APPROVED documents, and the banner counts documents above the viewer's clearance (titles hidden) by design (D-052).
+**Count mismatch (33 vs 48):** the Dashboard "Total documents" and the Repository both exclude ARCHIVED unless filtered, and the Admin Panel > Reports chart
+includes every status. 48 − 33 = 15 would be the archived documents. I could not confirm that number without reading the dev database, which I did not do; a
+different clearance between two sessions would also give different totals. **Change:** the Reports tab now states its total, how many are archived, and the
+number the Dashboard and Repository show; the Dashboard card says "archived excluded". A test pins `reports total − archived == repository total`.

@@ -1,5 +1,6 @@
 """users module service layer — Mongo access for the users collection."""
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -86,6 +87,24 @@ async def get_user_by_id(db: AsyncIOMotorDatabase, user_id: str) -> dict[str, An
     except InvalidId:
         return None
     return await db[USERS_COLLECTION].find_one({"_id": oid})
+
+
+async def identities_by_id(
+    db: AsyncIOMotorDatabase, ids: Iterable[Any]
+) -> dict[ObjectId, dict[str, Any]]:
+    """{user _id: {"name", "email"}} for the ids that are users (D-054). One batched query,
+    ids that are not ObjectIds (an email or "SYSTEM" stored as an actor) are skipped, and
+    an id with no user (deleted by hand) is simply absent: callers decide what to show."""
+    wanted = {i for i in ids if isinstance(i, ObjectId)}
+    if not wanted:
+        return {}
+    cursor = db[USERS_COLLECTION].find({"_id": {"$in": list(wanted)}}, {"name": 1, "email": 1})
+    return {u["_id"]: u async for u in cursor}
+
+
+def display_name(user: dict[str, Any]) -> str:
+    """Name if there is one, otherwise the email (D-054)."""
+    return (user.get("name") or "").strip() or user["email"]
 
 
 async def list_users(db: AsyncIOMotorDatabase, page: int, limit: int) -> tuple[list[UserOut], int]:

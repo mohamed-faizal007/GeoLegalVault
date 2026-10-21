@@ -2,7 +2,29 @@ import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../context/useAuth";
+import { ApiError } from "../api/http";
 import { describeError } from "../lib/errorMessages";
+
+/**
+ * The count comes from the server and is identical for an unknown email, a wrong password and a
+ * disabled account (D-056), so showing it tells a visitor nothing about which accounts exist.
+ */
+function describeLoginFailure(err: unknown): string {
+  const { code } = describeError(err);
+  const body = err instanceof ApiError ? err.body : null;
+  if (code === "HTTP_429") {
+    const wait = typeof body?.retry_after_sec === "number" ? body.retry_after_sec : null;
+    return wait
+      ? `Too many attempts. Please wait ${wait} second${wait === 1 ? "" : "s"} and try again.`
+      : "Too many attempts. Please wait a moment and try again.";
+  }
+  const attempts = body?.attempts;
+  const max = body?.max_attempts;
+  if (typeof attempts !== "number" || typeof max !== "number") return "Invalid email or password.";
+  return attempts >= max
+    ? `Invalid email or password. Attempt ${attempts} of ${max}: sign-in is paused for about a minute.`
+    : `Invalid email or password. Attempt ${attempts} of ${max}.`;
+}
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -29,12 +51,7 @@ export default function Login() {
       // Deliberately the same generic message regardless of whether the
       // email exists, the password is wrong, or the account is disabled —
       // no user enumeration (Guardrail: Plan Part 2 FR-1 security notes).
-      const { code } = describeError(err);
-      setError(
-        code === "HTTP_429"
-          ? "Too many attempts. Please wait a moment and try again."
-          : "Invalid email or password.",
-      );
+      setError(describeLoginFailure(err));
     } finally {
       setSubmitting(false);
     }

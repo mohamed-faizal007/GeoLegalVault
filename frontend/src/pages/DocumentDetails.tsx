@@ -191,6 +191,17 @@ export default function DocumentDetails() {
         </div>
         <p className="mt-0.5 text-sm text-muted">
           {doc.doc_type} — {levelLabel(doc.classification)}
+          {hasPermission(role, PERMISSIONS.AUDIT_VIEW) && (
+            <>
+              {" · "}
+              <Link
+                to={`/audit?document_id=${doc.id}`}
+                className="text-brand-300 hover:text-brand-200 hover:underline"
+              >
+                View audit trail
+              </Link>
+            </>
+          )}
         </p>
       </div>
 
@@ -213,7 +224,12 @@ export default function DocumentDetails() {
       <div className="grid grid-cols-2 gap-4 card-pad text-sm md:grid-cols-3">
         <div>
           <p className="text-xs uppercase tracking-wide text-faint">Owner</p>
-          <p className="mt-0.5 text-ink/90">{doc.owner_id}</p>
+          <p className="mt-0.5 text-ink/90">
+            {doc.owner_name || "Unknown user"}
+            <span className="ml-2 font-mono text-xs text-faint" title="Account id">
+              {doc.owner_id}
+            </span>
+          </p>
         </div>
         <div>
           <p className="text-xs uppercase tracking-wide text-faint">Created</p>

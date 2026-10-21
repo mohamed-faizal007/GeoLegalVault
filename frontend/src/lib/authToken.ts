@@ -11,6 +11,8 @@ export interface StoredUser {
   id: string;
   role: string;
   email: string;
+  /** Display name from GET /users/me; absent until that call returns. */
+  name?: string;
 }
 
 let accessToken: string | null = null;

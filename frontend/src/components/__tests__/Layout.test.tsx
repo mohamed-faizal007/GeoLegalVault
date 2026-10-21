@@ -52,6 +52,17 @@ describe("Layout header + sidebar", () => {
     expect(await screen.findByText("login page")).toBeInTheDocument();
   });
 
+  it("returns the content area to the top when the route changes", async () => {
+    const scrollTo = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { value: scrollTo, configurable: true });
+    renderLayout();
+    scrollTo.mockClear();
+
+    await userEvent.click(screen.getByRole("link", { name: /document repository/i }));
+    expect(await screen.findByText("repo body")).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0 });
+  });
+
   it("closes the menu on Escape", async () => {
     renderLayout();
 

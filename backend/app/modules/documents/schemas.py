@@ -20,6 +20,9 @@ class DocumentOut(BaseModel):
     doc_type: str
     classification: str
     owner_id: str
+    # The owner's name (D-054); None if that account no longer exists. The name only, never the
+    # email: this response goes to everyone cleared for the document, not just to administrators.
+    owner_name: str | None = None
     status: str
     current_version_id: str | None
     tags: list[str]

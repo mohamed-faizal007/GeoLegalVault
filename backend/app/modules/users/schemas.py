@@ -55,6 +55,16 @@ class UserOut(BaseModel):
     last_login: datetime | None = None
 
 
+class MeOut(BaseModel):
+    """The caller's own account: what the UI needs to greet them. Nothing about anyone else."""
+
+    id: str
+    email: str
+    name: str
+    role: Role
+    clearance: ClearanceLevel
+
+
 class UserListOut(BaseModel):
     items: list[UserOut]
     page: int

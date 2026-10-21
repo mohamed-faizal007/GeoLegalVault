@@ -10,6 +10,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ReturnDocument
 
 from app.core.config import get_settings
 from app.core.security import (
@@ -31,16 +32,23 @@ _WINDOW_SEC = 60.0
 _RATE_LIMIT_COLLECTION = "login_rate_limits"
 
 
+MAX_ATTEMPTS = _MAX_ATTEMPTS
+
+
 class InvalidCredentials(Exception):
-    pass
+    def __init__(self, email: str, attempts: int = 0):
+        super().__init__(email)
+        self.attempts = attempts
 
 
-class AccountDisabled(Exception):
-    pass
+class AccountDisabled(InvalidCredentials):
+    """Reported to the caller exactly like a wrong password, attempt count included (D-056)."""
 
 
 class RateLimited(Exception):
-    pass
+    def __init__(self, email: str, retry_after_sec: int = 0):
+        super().__init__(email)
+        self.retry_after_sec = retry_after_sec
 
 
 class InvalidRefreshToken(Exception):
@@ -58,17 +66,17 @@ async def _check_rate_limit(db: AsyncIOMotorDatabase, email: str) -> None:
     if stored_expiry.tzinfo is None:
         stored_expiry = stored_expiry.replace(tzinfo=UTC)
     if stored_expiry > now and doc["count"] >= _MAX_ATTEMPTS:
-        raise RateLimited(email)
+        raise RateLimited(email, max(1, int((stored_expiry - now).total_seconds()) + 1))
 
 
-async def _record_failure(db: AsyncIOMotorDatabase, email: str) -> None:
+async def _record_failure(db: AsyncIOMotorDatabase, email: str) -> int:
     """Atomic INCR-with-expiry: within an active window, increments the
     counter; once the window has lapsed, starts a fresh one. The single
     find_one_and_update pipeline avoids a read-modify-write race between
     concurrent requests for the same email (across processes/instances)."""
     now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=_WINDOW_SEC)
-    await db[_RATE_LIMIT_COLLECTION].find_one_and_update(
+    updated = await db[_RATE_LIMIT_COLLECTION].find_one_and_update(
         {"_id": email},
         [
             {
@@ -91,7 +99,9 @@ async def _record_failure(db: AsyncIOMotorDatabase, email: str) -> None:
             }
         ],
         upsert=True,
+        return_document=ReturnDocument.AFTER,
     )
+    return int(updated["count"])
 
 
 async def _reset_failures(db: AsyncIOMotorDatabase, email: str) -> None:
@@ -137,7 +147,7 @@ async def login(
 
     user = await users_service.get_user_by_email(db, email)
     if user is None or not verify_password(password, user["password_hash"]):
-        await _record_failure(db, email)
+        attempts = await _record_failure(db, email)
         _logger.warning("auth: login failed", extra={"email": email, "ip": ip})
         await audit.record(
             actor_id=email,
@@ -147,9 +157,12 @@ async def login(
             result="INVALID_CREDENTIALS",
             ip=ip,
         )
-        raise InvalidCredentials(email)
+        raise InvalidCredentials(email, attempts)
 
     if not user.get("is_active", False):
+        # Counted like a wrong password, so the attempt count a caller sees does not tell a
+        # disabled account apart from any other failure (D-056).
+        attempts = await _record_failure(db, email)
         _logger.warning("auth: login rejected — account disabled", extra={"email": email, "ip": ip})
         await audit.record(
             actor_id=user["_id"],
@@ -159,7 +172,7 @@ async def login(
             result="ACCOUNT_DISABLED",
             ip=ip,
         )
-        raise AccountDisabled(email)
+        raise AccountDisabled(email, attempts)
 
     await _reset_failures(db, email)
     await users_service.record_login(db, user["_id"])

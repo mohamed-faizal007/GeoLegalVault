@@ -11,6 +11,8 @@ export interface DocumentOut {
   doc_type: string;
   classification: string;
   owner_id: string;
+  /** The owner's name; null when that account no longer exists. Never an email. */
+  owner_name?: string | null;
   status: string;
   current_version_id: string | null;
   tags: string[];

@@ -68,7 +68,7 @@ async def test_verify_untouched_anchored_version_is_verified(client, db, local_c
     assert body["result"] == "VERIFIED"
     assert body["recomputed"] == body["stored"] == body["onchain"]
     assert body["tx_hash"] is not None and body["tx_hash"].startswith("0x")
-    assert body["etherscan_url"] == f"https://sepolia.etherscan.io/tx/{body['tx_hash']}"
+    assert body["etherscan_url"] is None  # local test chain, not Sepolia (D-057)
 
     history = await client.get(f"/api/v1/verify/{version_id}/history", headers=_auth(approver))
     assert history.status_code == 200, history.text

@@ -315,6 +315,7 @@ forgets; one that answers 403 tells a caller the document exists.
 - **No automatic content access for anyone.** An Administrator reads, verifies and archives documents only with
   clearance like everyone else. An Auditor sees every audit row, but `meta` is blanked and the row marked
   `redacted` when its target is above their clearance.
+- **Readable names respect the same rule (D-054).** `owner_name` on a document is the name only (never the email); an audit row's `target_label` carries a document title only where `can_see` allows it. `backend/tests/api/test_readable_identity_and_audit_filters.py` pins both, with a cleared positive control.
 - Tests: `backend/tests/integration/test_classification_access.py` (includes
   `test_every_route_with_a_document_or_version_id_has_an_access_probe`, which fails the build when a route with a
   `document_id`/`version_id` is not covered), `tests/unit/test_clearance.py`, and

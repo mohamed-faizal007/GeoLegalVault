@@ -56,6 +56,21 @@ describe("ReportsPanel verification counts (D-049)", () => {
     expect(valueOf(/Chain unreachable/)).toBe("4");
   });
 
+  it("reconciles its document total with the Dashboard and Repository, which leave out archived", async () => {
+    getReportsSummaryMock.mockResolvedValue({
+      ...summary({}),
+      documents_by_status: [
+        { status: "ACTIVE", count: 30 },
+        { status: "APPROVED", count: 3 },
+        { status: "ARCHIVED", count: 15 },
+      ],
+    });
+    renderPanel();
+    const note = await screen.findByTestId("reports-doc-total");
+    expect(note).toHaveTextContent("48 documents you can access in total, including 15 archived");
+    expect(note).toHaveTextContent("show 33");
+  });
+
   it("falls back to 0 when an older server omits them", async () => {
     getReportsSummaryMock.mockResolvedValue(summary({}));
     renderPanel();

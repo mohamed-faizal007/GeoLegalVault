@@ -38,6 +38,19 @@ export interface UserUpdate {
   is_active?: boolean;
 }
 
+export interface MeOut {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  clearance: string;
+}
+
+/** The caller's own record: the only way the browser learns its display name. */
+export function getMe(): Promise<MeOut> {
+  return http.get<MeOut>("/users/me");
+}
+
 export function listUsers(page = 1, limit = 50): Promise<UserListOut> {
   return http.get<UserListOut>("/users", { page, limit });
 }

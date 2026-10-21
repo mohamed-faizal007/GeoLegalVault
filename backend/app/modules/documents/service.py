@@ -22,6 +22,7 @@ from app.core.config import get_settings
 from app.core.errors import AppError
 from app.modules.documents.models import DOCUMENTS_COLLECTION, DocumentStatus
 from app.modules.documents.schemas import DocumentOut, ReviewFeedbackOut
+from app.modules.users.service import identities_by_id
 from app.modules.versions import service as versions_service
 from app.modules.versions.models import VersionStatus
 from app.services import storage
@@ -113,13 +114,22 @@ def validate_upload(data: bytes, claimed_content_type: str) -> None:
         )
 
 
-def to_out(doc: dict[str, Any]) -> DocumentOut:
+async def owner_names(db: AsyncIOMotorDatabase, docs: list[dict[str, Any]]) -> dict[Any, str]:
+    """{owner _id: name} for these documents, in one query (D-054). Called only with
+    documents the caller was already allowed to load, so it adds a name to something they can
+    see and never decides visibility."""
+    users = await identities_by_id(db, (d.get("owner_id") for d in docs))
+    return {uid: name for uid, u in users.items() if (name := (u.get("name") or "").strip())}
+
+
+def to_out(doc: dict[str, Any], owners: dict[Any, str] | None = None) -> DocumentOut:
     return DocumentOut(
         id=str(doc["_id"]),
         title=doc["title"],
         doc_type=doc["doc_type"],
         classification=doc["classification"],
         owner_id=str(doc["owner_id"]),
+        owner_name=(owners or {}).get(doc["owner_id"]),
         status=doc["status"],
         current_version_id=(
             str(doc["current_version_id"]) if doc.get("current_version_id") else None
