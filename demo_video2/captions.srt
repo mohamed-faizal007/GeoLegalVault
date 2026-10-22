@@ -1,0 +1,899 @@
+1
+00:00:04,250 --> 00:00:07,000
+Legal documents face two quiet risks.
+
+2
+00:00:07,700 --> 00:00:12,950
+First, a file can be changed after everyone agreed to it, and nobody notices.
+
+3
+00:00:13,650 --> 00:00:17,620
+Second, anyone with a login can upload or approve from anywhere.
+
+4
+00:00:18,320 --> 00:00:21,390
+GeoLegalVault is a prototype that tackles both.
+
+5
+00:00:22,090 --> 00:00:27,846
+Uploads and approvals are allowed only from an approved area. That area is called a geofence,
+
+6
+00:00:27,846 --> 00:00:29,950
+a virtual boundary drawn on a map.
+
+7
+00:00:30,650 --> 00:00:35,800
+Every document is reviewed and approved by different people, so nobody approves their own work.
+
+8
+00:00:36,500 --> 00:00:41,748
+When a version is approved, a fingerprint of the file, called a SHA-256 hash,
+
+9
+00:00:41,748 --> 00:00:45,020
+is written to the Ethereum Sepolia test network.
+
+10
+00:00:45,720 --> 00:00:52,469
+Later, anyone can recompute the fingerprint and see whether the file still matches. This is tamper-evident:
+
+11
+00:00:52,469 --> 00:00:54,740
+changes are detected, not prevented.
+
+12
+00:00:55,440 --> 00:01:02,306
+In about twenty minutes we follow one fresh document through its whole life: upload, approval, anchoring,
+
+13
+00:01:02,306 --> 00:01:05,510
+tampering, an amendment, a download, and archive.
+
+14
+00:01:06,210 --> 00:01:12,697
+Everything you will see is the real running system, on a test network. Where the screen cannot show something,
+
+15
+00:01:12,697 --> 00:01:15,940
+like database records, I label it a supplementary view.
+
+16
+00:01:16,640 --> 00:01:23,329
+First, login and roles. There are five roles: Administrator, Legal Officer, Reviewing Officer,
+
+17
+00:01:23,329 --> 00:01:27,670
+Authorized Staff and Auditor. A role is a set of permissions.
+
+18
+00:01:28,390 --> 00:01:34,979
+Here Authorized Staff is signed in. The welcome line shows the person's name, not a database id.
+
+19
+00:01:34,979 --> 00:01:38,960
+The menu has Upload, but no Admin Panel and no Audit Logs.
+
+20
+00:01:39,660 --> 00:01:43,465
+These counts come from the server, and they differ for each person.
+
+21
+00:01:43,465 --> 00:01:47,611
+In total the vault holds twenty-one demo documents, two of them archived,
+
+22
+00:01:47,611 --> 00:01:50,280
+and archived ones are left out of these counts.
+
+23
+00:01:51,010 --> 00:01:58,243
+Next, a Legal Officer signs in, in a completely separate browser session. This role has a higher clearance,
+
+24
+00:01:58,243 --> 00:02:00,000
+so it sees more documents.
+
+25
+00:02:00,700 --> 00:02:06,416
+Then an Administrator. Their menu shows the Admin Panel and Audit Logs, but no Upload.
+
+26
+00:02:06,416 --> 00:02:11,800
+Administrators manage users and zones, but they cannot upload, review or approve.
+
+27
+00:02:12,500 --> 00:02:19,016
+Every person also has a clearance level: Public, Internal, Confidential, Restricted or Top Secret.
+
+28
+00:02:19,016 --> 00:02:25,200
+The menu is only a convenience. The server checks role and clearance on every single request.
+
+29
+00:02:25,900 --> 00:02:31,400
+Now the Administrator's Admin Panel. The Geofences tab lists the approved zones.
+
+30
+00:02:32,109 --> 00:02:37,211
+A zone is a polygon: a list of longitude and latitude pairs, always in that order.
+
+31
+00:02:37,211 --> 00:02:44,117
+The form previews the approximate centre of the ring you type, and asks the administrator to confirm the place.
+
+32
+00:02:44,117 --> 00:02:49,779
+That preview is only a visual aid. Our demo zone, HQ Campus, is the small box listed below,
+
+33
+00:02:49,779 --> 00:02:54,881
+around latitude eleven point six seven and longitude seventy-eight point one five.
+
+34
+00:02:54,881 --> 00:02:57,929
+Every request is tested against it on the server.
+
+35
+00:02:58,629 --> 00:03:04,039
+Now the Users tab. People are shown by name, with their role and clearance.
+
+36
+00:03:04,748 --> 00:03:11,004
+We create a throwaway account with the Auditor role. A new user starts at the lowest clearance, Public,
+
+37
+00:03:11,004 --> 00:03:13,008
+and the password field is masked.
+
+38
+00:03:13,712 --> 00:03:20,072
+The new account appears in the table. We will use it later, to show a hidden document and the login protection.
+
+39
+00:03:20,788 --> 00:03:25,781
+Now the main flow, with one fresh document. Authorized Staff opens Upload.
+
+40
+00:03:25,781 --> 00:03:32,190
+The page shows the location the browser reports. On a real device that comes from GPS or Wi-Fi.
+
+41
+00:03:32,190 --> 00:03:38,868
+In this recording a test harness supplies it, and the label says so. The server still validates it.
+
+42
+00:03:39,579 --> 00:03:45,769
+We enter a title, the type Lease, the classification Internal, and pick a sample PDF.
+
+43
+00:03:46,474 --> 00:03:53,308
+On Upload, the server checks, in a fixed order: your token, your role, your location, then the file.
+
+44
+00:03:53,308 --> 00:04:00,347
+Then it stores the file, computes the hash and writes an audit entry. The document is saved as a Draft,
+
+45
+00:04:00,347 --> 00:04:02,124
+owned by Authorized Staff.
+
+46
+00:04:02,840 --> 00:04:08,240
+In this supplementary view, the real database shows the document row and the version row.
+
+47
+00:04:08,240 --> 00:04:14,732
+The highlighted field is the SHA-256 fingerprint of the file. It turns any file into sixty-four characters,
+
+48
+00:04:14,732 --> 00:04:17,280
+and changing one byte changes all of them.
+
+49
+00:04:17,988 --> 00:04:22,461
+The file itself is not in the database. It sits in private object storage,
+
+50
+00:04:22,461 --> 00:04:28,446
+called RustFS here and Cloudflare R2 in production, under a server-made key that includes the hash.
+
+51
+00:04:28,446 --> 00:04:34,068
+This demo shares one bucket with the development setup, but this document has its own object.
+
+52
+00:04:34,781 --> 00:04:39,481
+The uploader then submits the document for review, and the status becomes Submitted.
+
+53
+00:04:40,189 --> 00:04:46,579
+In the app, Version History shows the fingerprint, shortened. The full value is in the database.
+
+54
+00:04:47,296 --> 00:04:50,401
+Now the negative cases. The same user tries again,
+
+55
+00:04:50,401 --> 00:04:55,246
+but the browser reports a place about one hundred kilometres outside the zone.
+
+56
+00:04:55,955 --> 00:05:02,262
+The server answers GEOFENCE_DENIED, and nothing is stored. The server decides inside or outside,
+
+57
+00:05:02,262 --> 00:05:03,445
+never the browser.
+
+58
+00:05:04,159 --> 00:05:10,119
+Now the location is inside the zone, but very imprecise: plus or minus five hundred metres.
+
+59
+00:05:10,825 --> 00:05:16,355
+The server refuses that too, with LOCATION_LOW_CONFIDENCE. This is called fail-closed:
+
+60
+00:05:16,355 --> 00:05:22,785
+if the system is not sure, it says no. This server allows up to three hundred metres of uncertainty.
+
+61
+00:05:23,499 --> 00:05:28,603
+The zone denial is written to the audit log with the claimed position, as you can see here.
+
+62
+00:05:28,603 --> 00:05:34,772
+The low-confidence refusal is different: it happens before the zone check, and it goes to the application log,
+
+63
+00:05:34,772 --> 00:05:35,949
+not to the audit log.
+
+64
+00:05:36,650 --> 00:05:41,818
+An honest limit: browser location can be faked, for example with developer tools.
+
+65
+00:05:41,818 --> 00:05:48,198
+So geofencing here is a policy control that adds a layer. It is not a guarantee of where someone is.
+
+66
+00:05:48,198 --> 00:05:52,600
+The tamper-evidence comes from the blockchain, not from the geofence.
+
+67
+00:05:53,308 --> 00:05:56,409
+Next, review and approval. This uses maker-checker,
+
+68
+00:05:56,409 --> 00:06:00,848
+meaning the person who made a document must not be the one who checks it.
+
+69
+00:06:01,552 --> 00:06:07,286
+Here a Legal Officer opens a seeded document that they uploaded themselves. There is no Approve button,
+
+70
+00:06:07,286 --> 00:06:09,902
+and the page says someone else must approve it.
+
+71
+00:06:10,603 --> 00:06:17,109
+If they call the server directly anyway, from inside the zone, the answer is MAKER_CHECKER_VIOLATION.
+
+72
+00:06:17,109 --> 00:06:22,003
+That is a real response, shown in a supplementary view. Nothing was changed.
+
+73
+00:06:22,711 --> 00:06:28,576
+Now the real path for our lease. A Reviewing Officer, a different person from the uploader,
+
+74
+00:06:28,576 --> 00:06:30,381
+opens it and chooses Review.
+
+75
+00:06:31,091 --> 00:06:37,457
+They pass the review, and the status becomes Pending Approval. A reviewer can instead request changes,
+
+76
+00:06:37,457 --> 00:06:41,701
+which sends it back to the uploader. This app has no rejected state.
+
+77
+00:06:42,409 --> 00:06:48,040
+Then a Legal Officer who did not upload it opens the document. The Approve button is there.
+
+78
+00:06:48,040 --> 00:06:50,329
+The server checks the location first.
+
+79
+00:06:51,032 --> 00:06:55,260
+Approval starts anchoring automatically, and there is no anchor button.
+
+80
+00:06:55,260 --> 00:06:59,011
+The backend's own wallet signs the transaction, never the user.
+
+81
+00:06:59,011 --> 00:07:04,370
+This is a real transaction on the Sepolia test network, the free test version of Ethereum.
+
+82
+00:07:04,370 --> 00:07:06,632
+I have trimmed the wait for the block.
+
+83
+00:07:08,370 --> 00:07:14,970
+The status becomes Active. The approval cost a tiny amount of test Ether, which has no real value.
+
+84
+00:07:15,680 --> 00:07:22,964
+Now, what exactly went on the blockchain. In Version History, version one is Active and marked Confirmed.
+
+85
+00:07:22,964 --> 00:07:24,490
+We open View on-chain.
+
+86
+00:07:25,230 --> 00:07:31,840
+The Blockchain Anchor Record puts two hashes side by side. On the left, the hash recorded in our database.
+
+87
+00:07:31,840 --> 00:07:38,763
+On the right, the hash the app has just read live from the contract on the Sepolia testnet. They are identical,
+
+88
+00:07:38,763 --> 00:07:40,260
+and the page says Match.
+
+89
+00:07:40,960 --> 00:07:47,899
+The page also shows the network label, Sepolia testnet, the contract address, and the transaction hash,
+
+90
+00:07:47,899 --> 00:07:49,180
+with a Copy button.
+
+91
+00:07:49,910 --> 00:07:56,907
+The smart contract, DocumentAnchor, stores only four things per document version: the hash, the version number,
+
+92
+00:07:56,907 --> 00:08:02,959
+an event type, and the block time. The PDF, its filename and any person's name are not on-chain,
+
+93
+00:08:02,959 --> 00:08:09,830
+because a blockchain is public and permanent. The contract also refuses a second anchor for the same version.
+
+94
+00:08:10,560 --> 00:08:17,800
+On the public Etherscan page for the Sepolia testnet, the transaction shows Status: Success, and a tiny fee.
+
+95
+00:08:18,560 --> 00:08:25,194
+One service wallet in the backend signs every anchor. That is a trust assumption we come back to at the end.
+
+96
+00:08:25,194 --> 00:08:28,450
+And there is no Merkle tree: each file gets one hash.
+
+97
+00:08:29,210 --> 00:08:35,480
+Now clearance. The throwaway user has the lowest level, Public, and our lease is Internal.
+
+98
+00:08:36,210 --> 00:08:41,740
+In the repository the lease is simply not listed, because the server filters in the database query.
+
+99
+00:08:42,510 --> 00:08:47,057
+Opening its exact link shows the app's own wording: That item couldn't be found,
+
+100
+00:08:47,057 --> 00:08:48,820
+or you don't have access to it.
+
+101
+00:08:49,520 --> 00:08:57,244
+In the supplementary view, the real document and a made-up id give exactly the same answer, 404 not found.
+
+102
+00:08:57,244 --> 00:09:04,750
+We use 404 instead of 403, which means forbidden, because a 403 would confirm that the document exists.
+
+103
+00:09:05,470 --> 00:09:11,130
+The same rule applies to everyone. Here the Administrator, whose clearance is Internal,
+
+104
+00:09:11,130 --> 00:09:18,157
+opens a seeded document classified Confidential, and also gets a real 404. Administrators manage the system,
+
+105
+00:09:18,157 --> 00:09:21,280
+but get no automatic access to document content.
+
+106
+00:09:21,980 --> 00:09:28,652
+A refused attempt on a document that exists is still written to the audit log as ACCESS_DENIED, as highlighted.
+
+107
+00:09:28,652 --> 00:09:32,740
+This is access control inside the application. It is not encryption.
+
+108
+00:09:33,480 --> 00:09:40,080
+Now the core feature: verification. The Legal Officer opens Integrity Verification for version one.
+
+109
+00:09:40,780 --> 00:09:45,240
+When we run it, the server reads the stored file and recomputes its SHA-256.
+
+110
+00:09:45,240 --> 00:09:48,937
+It compares that with the hash saved in the database at upload,
+
+111
+00:09:48,937 --> 00:09:52,870
+and with the anchored hash it reads live from the Sepolia contract.
+
+112
+00:09:53,580 --> 00:09:57,060
+All three are identical, so the result is VERIFIED.
+
+113
+00:09:57,780 --> 00:10:03,091
+A database change alone, or a storage change alone, cannot produce a false VERIFIED,
+
+114
+00:10:03,091 --> 00:10:05,810
+because the chain holds the original value.
+
+115
+00:10:06,510 --> 00:10:11,935
+Now the attack. First, for the demo, I save a copy of the original file bytes locally,
+
+116
+00:10:11,935 --> 00:10:18,180
+and check that their hash equals the recorded fingerprint. That lets me put things back afterwards.
+
+117
+00:10:18,910 --> 00:10:24,777
+Now someone with direct access to the storage server changes one byte of the file, not through the app.
+
+118
+00:10:24,777 --> 00:10:30,245
+This script bypasses the application on purpose, and it touches only this document's own object.
+
+119
+00:10:30,245 --> 00:10:33,720
+The database and the blockchain still hold the original hash.
+
+120
+00:10:34,420 --> 00:10:38,671
+We run verification again. The result is MISMATCH, tamper detected.
+
+121
+00:10:38,671 --> 00:10:44,636
+The recomputed hash is completely different, while the stored and on-chain hashes still agree.
+
+122
+00:10:44,636 --> 00:10:50,030
+One changed byte gives a totally different hash. That is called the avalanche effect.
+
+123
+00:10:50,730 --> 00:10:57,420
+The document is also flagged as Tampered. The system made the change evident. It did not prevent it.
+
+124
+00:10:58,130 --> 00:11:01,883
+Now I write the original bytes back to the same storage key,
+
+125
+00:11:01,883 --> 00:11:05,450
+and confirm that their hash matches the recorded SHA-256.
+
+126
+00:11:06,150 --> 00:11:08,650
+Verification returns to VERIFIED.
+
+127
+00:11:09,350 --> 00:11:14,980
+But the Tampered flag is still on the document. A later pass does not clear it automatically.
+
+128
+00:11:15,750 --> 00:11:19,719
+Only an Administrator can clear it. They choose Clear integrity flag,
+
+129
+00:11:19,719 --> 00:11:24,610
+and must give a reason of at least ten characters, which is written to the audit log.
+
+130
+00:11:25,310 --> 00:11:32,049
+The app re-runs verification on every anchored version first, and only then clears the flag. The flag is gone,
+
+131
+00:11:32,049 --> 00:11:34,010
+and the document is clean again.
+
+132
+00:11:34,710 --> 00:11:41,887
+Now an amendment, which creates version two. Documents are never edited in place. Each version is a new,
+
+133
+00:11:41,887 --> 00:11:43,060
+immutable record.
+
+134
+00:12:10,560 --> 00:12:16,138
+A Legal Officer opens the active lease and chooses Request amendment. This is geofenced,
+
+135
+00:12:16,138 --> 00:12:17,850
+so the location is checked.
+
+136
+00:12:18,560 --> 00:12:22,980
+They must give a reason. The document moves to Amendment Requested.
+
+137
+00:12:23,710 --> 00:12:28,173
+Now Authorized Staff uploads the amended file, version two. The title,
+
+138
+00:12:28,173 --> 00:12:32,700
+type and classification are copied from the document and cannot change.
+
+139
+00:12:33,410 --> 00:12:37,230
+Version two starts as a Draft, and its uploader submits it.
+
+140
+00:12:37,930 --> 00:12:42,930
+The three-person rule applies again. The Reviewing Officer reviews version two.
+
+141
+00:12:43,630 --> 00:12:47,356
+And the Legal Officer, who did not upload it, approves.
+
+142
+00:12:47,356 --> 00:12:54,470
+This sends a second real transaction on the Sepolia test network, for version two. Again I trim the wait.
+
+143
+00:12:56,830 --> 00:13:03,388
+In Version History, version two is Active and Confirmed. Version one now carries the grey Superseded badge.
+
+144
+00:13:03,388 --> 00:13:07,984
+That is the only place the app says so. There is no separate current label:
+
+145
+00:13:07,984 --> 00:13:10,620
+the Active badge marks the current version.
+
+146
+00:13:11,330 --> 00:13:16,638
+The hashes are shortened on that page, so this supplementary view shows the proof.
+
+147
+00:13:16,638 --> 00:13:23,048
+The previous-hash field of version two equals, character for character, the SHA-256 of version one.
+
+148
+00:13:23,048 --> 00:13:27,580
+There is no parent version id field. This hash link is the connection.
+
+149
+00:13:28,280 --> 00:13:34,170
+Version two has its own anchor, again with the recorded and on-chain hashes side by side, and a Match.
+
+150
+00:13:34,930 --> 00:13:37,990
+Verification of version two returns VERIFIED.
+
+151
+00:13:38,730 --> 00:13:44,258
+And version one still verifies, because its file, its hash and its anchor are untouched.
+
+152
+00:13:44,258 --> 00:13:47,840
+The Verification page does not mention superseded at all.
+
+153
+00:13:48,580 --> 00:13:55,879
+Now download. The Download button gives the current version only, which is now version two. It is geofenced,
+
+154
+00:13:55,879 --> 00:13:58,110
+so the location is checked first.
+
+155
+00:13:58,830 --> 00:14:03,747
+The server answers with a short-lived pre-signed link, valid for sixty seconds.
+
+156
+00:14:03,747 --> 00:14:08,790
+The file never passes through the API. I will not show the link itself on screen.
+
+157
+00:14:09,490 --> 00:14:15,503
+To prove the download is genuine, the test harness fetched the file through that link and hashed it.
+
+158
+00:14:15,503 --> 00:14:18,750
+The result equals the recorded SHA-256 of version two.
+
+159
+00:14:19,490 --> 00:14:24,270
+The download is audited as ACCESS, with the version id, as highlighted.
+
+160
+00:14:24,990 --> 00:14:31,740
+Now the real denials. From outside the zone, the same Download button is refused with GEOFENCE_DENIED.
+
+161
+00:14:32,490 --> 00:14:38,070
+And a below-clearance viewer who is inside an assigned zone gets a 404 for the same document,
+
+162
+00:14:38,070 --> 00:14:43,410
+so the file is never even offered. The order of checks is the zone first, then clearance.
+
+163
+00:14:44,140 --> 00:14:51,150
+Finally, the end of the lifecycle: archive. The lease is Active, and it is in the repository list.
+
+164
+00:14:51,890 --> 00:14:58,200
+The Legal Officer opens it and chooses Archive. There is no reason field, and it is not geofenced.
+
+165
+00:14:58,940 --> 00:15:01,040
+The status is now Archived.
+
+166
+00:15:01,740 --> 00:15:05,260
+It has disappeared from the default Dashboard and Repository.
+
+167
+00:15:08,240 --> 00:15:11,550
+It appears when we filter the Repository on Archived.
+
+168
+00:15:12,250 --> 00:15:15,709
+Archiving keeps every version, anchor and file untouched.
+
+169
+00:15:15,709 --> 00:15:21,960
+The Reports panel will count one more archived document. And the backend has no way to undo an archive:
+
+170
+00:15:21,960 --> 00:15:26,330
+there is no restore route. Only direct database editing could change it.
+
+171
+00:15:27,100 --> 00:15:34,020
+There are six possible verification results. One more, live: a seeded draft that was never approved.
+
+172
+00:15:34,720 --> 00:15:40,967
+The result is NOT ANCHORED. The file is intact, but there is no blockchain record to compare with.
+
+173
+00:15:40,967 --> 00:15:43,390
+That is not an error and not an alarm.
+
+174
+00:15:44,120 --> 00:15:46,290
+Here are all six outcomes.
+
+175
+00:15:46,990 --> 00:15:52,813
+VERIFIED: the stored file, the recorded hash and the on-chain hash all agree. MISMATCH:
+
+176
+00:15:52,813 --> 00:15:55,960
+the file differs from the record, which we saw.
+
+177
+00:15:56,660 --> 00:16:02,660
+NOT_ANCHORED: it was never approved, so there is nothing on-chain to compare, which we just saw.
+
+178
+00:16:03,360 --> 00:16:08,966
+ANCHOR_MISSING: the database says it was anchored, but the chain says no. FILE_MISSING:
+
+179
+00:16:08,966 --> 00:16:14,186
+the stored file is gone. And CHAIN_UNREACHABLE: the blockchain could not be read,
+
+180
+00:16:14,186 --> 00:16:16,120
+so there is no verdict at all.
+
+181
+00:16:16,820 --> 00:16:22,220
+I did not trigger those last three live. They are marked on the slide as not triggered live.
+
+182
+00:16:22,920 --> 00:16:29,310
+Login also has protection. On the throwaway account only, I type wrong passwords on purpose.
+
+183
+00:16:30,010 --> 00:16:33,910
+The page counts the attempts. Attempt one of five.
+
+184
+00:16:34,660 --> 00:16:36,020
+Attempt two.
+
+185
+00:16:36,760 --> 00:16:38,190
+Attempt three.
+
+186
+00:16:38,910 --> 00:16:40,350
+Attempt four.
+
+187
+00:16:41,050 --> 00:16:45,150
+Attempt five. Sign-in is now paused for about a minute.
+
+188
+00:16:45,900 --> 00:16:52,020
+The next try is refused outright: too many attempts. That slows down password guessing.
+
+189
+00:16:52,720 --> 00:16:59,010
+In MongoDB, the login_rate_limits collection holds the counter for each email, and when the pause ends.
+
+190
+00:16:59,710 --> 00:17:06,954
+Finally, where everything lives. The Auditor opens Audit Logs, and it opens at the top, newest first.
+
+191
+00:17:06,954 --> 00:17:12,980
+Every action is a row: who, what, to what, and the result. Rows are only ever added.
+
+192
+00:17:13,680 --> 00:17:19,160
+The Action dropdown lists every action the log really contains. Here I pick Approve.
+
+193
+00:17:19,880 --> 00:17:24,680
+Actor search finds people by name or email. Here, Legal.
+
+194
+00:17:25,380 --> 00:17:31,900
+The document filter finds a document by its title, only among documents this person may open. Here,
+
+195
+00:17:31,900 --> 00:17:34,600
+a seeded board resolution, and its trail.
+
+196
+00:17:35,300 --> 00:17:40,580
+For our lease, the same view is one click from the document page: View audit trail.
+
+197
+00:17:41,300 --> 00:17:47,550
+This is the whole life of the lease, with names instead of ids. The ids are secondary text underneath.
+
+198
+00:17:49,100 --> 00:17:56,228
+Next, the MongoDB collections. Users, geofences, documents and document versions are the authoritative data.
+
+199
+00:17:56,228 --> 00:18:01,112
+The anchors collection is derived, because the chain is the real evidence.
+
+200
+00:18:01,112 --> 00:18:04,280
+Verification records and audit logs are history.
+
+201
+00:18:05,000 --> 00:18:09,969
+The ids link them: a version points to its document, an anchor points to its version,
+
+202
+00:18:09,969 --> 00:18:12,250
+and the storage key points to the file.
+
+203
+00:18:12,950 --> 00:18:19,907
+And the split: MongoDB holds state, fingerprints and audit. The private bucket holds the file bytes.
+
+204
+00:18:19,907 --> 00:18:24,500
+The Sepolia contract holds the hash, version, event type and time.
+
+205
+00:18:25,200 --> 00:18:31,825
+One honest gap: the audit log has no hash chain yet, so someone with database write access could alter it.
+
+206
+00:18:31,825 --> 00:18:33,700
+That is a planned improvement.
+
+207
+00:18:34,450 --> 00:18:39,000
+The Reports panel gives the whole picture. The Auditor can open it too.
+
+208
+00:18:39,700 --> 00:18:44,170
+Anchors confirmed counts the successful transactions, including our two.
+
+209
+00:18:44,900 --> 00:18:50,383
+This note reconciles the counts. The Auditor can access twenty-two documents in total,
+
+210
+00:18:50,383 --> 00:18:54,782
+including three archived. The Dashboard and Repository show nineteen,
+
+211
+00:18:54,782 --> 00:18:57,460
+because they leave archived documents out.
+
+212
+00:18:58,160 --> 00:19:04,550
+Mismatches counts our tamper test, and the archived count went up by one, because we archived the lease.
+
+213
+00:19:05,310 --> 00:19:13,513
+To summarise the parts. The front end is React. The back end is FastAPI in Python. MongoDB stores the data.
+
+214
+00:19:13,513 --> 00:19:19,033
+RustFS in development, and Cloudflare R2 in production, store the files.
+
+215
+00:19:19,033 --> 00:19:26,470
+web3.py talks to a Solidity smart contract on the Sepolia test network. Docker runs the services,
+
+216
+00:19:26,470 --> 00:19:29,000
+and a CI pipeline runs the tests.
+
+217
+00:19:29,700 --> 00:19:35,824
+Honest limits. This is a prototype on a test network. Geofencing is a policy control,
+
+218
+00:19:35,824 --> 00:19:43,822
+not proof of where someone is. A single service wallet signs every anchor. The audit log has no hash chain yet.
+
+219
+00:19:43,822 --> 00:19:51,820
+There is one SHA-256 per file, with no Merkle tree. And verification detects tampering; it does not prevent it.
+
+220
+00:19:52,520 --> 00:19:59,684
+Future work includes the open items in the project's own tracker: stronger login and secret handling,
+
+221
+00:19:59,684 --> 00:20:06,423
+called SEC-01 and SEC-03; deployment hardening, OPS-01; a hash chain for the audit log, CMP-01;
+
+222
+00:20:06,423 --> 00:20:13,516
+and malware scanning of uploads. Also per-matter access, so that clearance can say this matter only,
+
+223
+00:20:13,516 --> 00:20:15,290
+and richer display names.
+
+224
+00:20:15,990 --> 00:20:21,934
+There is also a planned next version that reduces how much you must trust the single service wallet.
+
+225
+00:20:21,934 --> 00:20:24,550
+I won't describe its design here. Thank you.

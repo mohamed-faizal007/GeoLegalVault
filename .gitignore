@@ -58,3 +58,17 @@ demo_video/state.json
 demo_video/build/
 demo_video/qa/
 demo_video/**/__pycache__/
+
+# demo_video2 outputs (large/binary), work files and state
+demo_video2/**/*.mp4
+demo_video2/**/*.wav
+demo_video2/**/*.webm
+demo_video2/audio/
+demo_video2/recordings/
+demo_video2/build/
+demo_video2/qa/*.png
+demo_video2/timeline.json
+demo_video2/work/
+demo_video2/samples/
+demo_video2/state.json
+demo_video2/**/__pycache__/
