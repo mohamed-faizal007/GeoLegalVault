@@ -1,0 +1,929 @@
+GEOLEGALVAULT DEMO V2 - SPEAKER SCRIPT
+
+Read over GeoLegalVault_Demo_v2_silent_captions.mp4. Times
+
+are m:ss on that video. Text in [brackets] is a hint, do
+
+not read it aloud. Start speaking a quarter of a second
+
+after the time.
+
+==========================================================
+
+
+BEFORE YOU RECORD
+
+Scene 1: The problem and the idea - 0:04 to 1:16 (72 s,
+
+fastest 128 wpm)
+
+Scene 2: Login, roles, clearance and names - 1:16 to 2:25
+
+(69 s, fastest 129 wpm)
+
+Scene 3: Administrator: zones and users - 2:25 to 3:20 (55
+
+s, fastest 130 wpm)
+
+Scene 4: Upload version one inside the zone - 3:20 to 4:47
+
+(87 s, fastest 126 wpm)
+
+Scene 5: Upload refused: outside the zone, and poor
+
+accuracy - 4:47 to 5:53 (66 s, fastest 129 wpm)
+
+Scene 6: Review, maker-checker and approval - 5:53 to 7:15
+
+(82 s, fastest 126 wpm)
+
+Scene 7: What is anchored on Sepolia - 7:15 to 8:28 (74 s,
+
+fastest 125 wpm)
+
+Scene 8: Clearance: a hidden document is a 404 - 8:28 to
+
+9:33 (64 s, fastest 122 wpm)
+
+Scene 9: Verify the genuine file: VERIFIED - 9:33 to 10:06
+
+(33 s, fastest 125 wpm)
+
+Scene 10: Tamper with the stored file, restore it, clear
+
+the flag - 10:06 to 11:34 (88 s, fastest 127 wpm)
+
+Scene 11: Amendment: version two - 11:34 to 13:48 (134 s,
+
+fastest 129 wpm)
+
+Scene 12: Download the current version - 13:48 to 14:43
+
+(56 s, fastest 128 wpm)
+
+Scene 13: Archive - 14:43 to 15:26 (43 s, fastest 121 wpm)
+
+Scene 14: The other verification outcomes - 15:26 to 16:22
+
+(56 s, fastest 130 wpm)
+
+Scene 15: Login protection - 16:22 to 16:59 (37 s, fastest
+
+127 wpm)
+
+Scene 16: Audit log, MongoDB and storage - 16:59 to 18:34
+
+(95 s, fastest 126 wpm)
+
+Scene 17: Reports - 18:34 to 19:05 (31 s, fastest 129 wpm)
+
+Scene 18: Summary and future work - 19:05 to 20:24 (80 s,
+
+fastest 125 wpm)
+
+
+
+FINAL VIDEO: a 24 second title slide comes first, so every
+
+main-video time in this script is 24 seconds LATER in the
+
+final video. The video is cut at 19:28 of the main video:
+
+anything marked CUT - DO NOT RECORD is not used.
+
+Scene 0: Title slide - 0:00 to 0:24 (suggested words
+
+below)
+
+
+
+KEY TERMS
+
+Geofence: a virtual boundary drawn on a map; uploads and
+
+approvals are allowed only inside it.
+
+SHA-256 hash: a 64-character fingerprint of a file; change
+
+one byte and the whole fingerprint changes.
+
+Anchor / anchoring: writing that fingerprint (never the
+
+file) to the public Sepolia test network.
+
+Sepolia: a free Ethereum test network. Test Ether has no
+
+real value.
+
+Maker-checker: the person who made a document may not be
+
+the one who approves it.
+
+Clearance: Public < Internal < Confidential < Restricted <
+
+Top Secret; a document above yours is a 404.
+
+404 vs 403: 404 = not found, 403 = forbidden. 404 is used
+
+so a hidden document is not confirmed to exist.
+
+Pre-signed link: a download link that works for 60
+
+seconds; the file never passes through the API.
+
+Supplementary view: a read-only look at the database or
+
+storage, labelled as such, not part of the app.
+
+Fail-closed: if the system is not sure about the location,
+
+it says no.
+
+Service wallet: the one backend wallet that signs every
+
+anchor; users never sign.
+
+Merkle tree: a batching scheme for hashes; not used here.
+
+One hash per file.
+
+
+
+THREE HONEST LIMITS - DO NOT SKIP
+
+1. At 0:45: Anyone can recompute the fingerprint later and
+
+check the file. This is tamper-evident: changes are
+
+detected, not prevented.
+
+2. At 5:36: An honest limit: browser location can be
+
+faked, for example with developer tools. So geofencing
+
+here is policy, not a guarantee of where someone is. The
+
+tamper-evidence comes from the blockchain.
+
+3. At 18:24: One honest gap: the audit log has no hash
+
+chain yet, so database writers could alter it.
+
+Say: prototype, Sepolia test network, tamper-evident,
+
+policy-level geofencing. Never say: tamper-proof,
+
+unhackable, guaranteed location.
+
+==========================================================
+
+
+SCENE 0: TITLE SLIDE
+
+0:00 to 0:24 (final video only)
+
+ON SCREEN: Title slide: GeoLegalVault, team members,
+
+course details
+
+0:00   Good day. This is GeoLegalVault, a course project
+
+for Blockchain Technologies, C-S-E four-oh-seven-eight, at
+
+Vellore Institute of Technology. We are Ekanath D V, S.
+
+Mohamed Faizal and Rohan Julius Preetan, with our faculty,
+
+Doctor Jayanthi R. This is a live demonstration.
+
+==========================================================
+
+
+SCENE 1: THE PROBLEM AND THE IDEA
+
+0:04 to 1:16  (72 seconds)
+
+
+ON SCREEN: Title card, then Slide 1: the problem
+
+0:13   Second, any login works from anywhere.
+
+
+ON SCREEN: Slide 2: what GeoLegalVault does
+
+1:05   Everything is the real system on a test network.
+
+Where the screen can't show something, I label it a
+
+supplementary view.
+
+
+==========================================================
+
+
+SCENE 2: LOGIN, ROLES, CLEARANCE AND NAMES
+
+1:16 to 2:25  (69 seconds)
+
+
+ON SCREEN: Login page, then the Dashboard as Authorized
+
+Staff
+
+1:39   These counts come from the server and differ per
+
+person. The vault holds twenty-one demo documents, two
+
+archived, which these counts leave out.
+
+
+ON SCREEN: A second browser session: Legal Officer, then
+
+Administrator
+
+2:12   Everyone also has a clearance level: Public,
+
+Internal, Confidential, Restricted or Top Secret. The menu
+
+is a convenience; the server checks role and clearance on
+
+every request.
+
+
+==========================================================
+
+
+SCENE 3: ADMINISTRATOR: ZONES AND USERS
+
+2:25 to 3:20  (55 seconds)
+
+
+ON SCREEN: Admin Panel, Geofences tab
+
+2:31   A zone is a polygon of longitude and latitude
+
+pairs, always in that order. The form previews the centre,
+
+as a visual aid only. Our demo zone, HQ Campus [H-Q], is
+
+the small box below, near latitude eleven point six seven,
+
+longitude seventy-eight point one five. The server tests
+
+every request against it.
+
+
+ON SCREEN: Admin Panel, Users tab: creating the throwaway
+
+user
+
+3:13   The new account appears. We use it later, for
+
+hidden documents and login limits.
+
+
+==========================================================
+
+
+SCENE 4: UPLOAD VERSION ONE INSIDE THE ZONE
+
+3:20 to 4:47  (87 seconds)
+
+
+ON SCREEN: Upload page as Authorized Staff
+
+3:39   We enter a title, the type Lease, classification
+
+Internal, and a sample PDF.
+
+
+ON SCREEN: Document saved as Draft
+
+3:46   On Upload, the server checks, in order: your token,
+
+your role, your location, then the file. It stores the
+
+file, computes the hash and writes an audit entry. The
+
+document is a Draft.
+
+
+ON SCREEN: Supplementary view: the database rows, hash
+
+highlighted
+
+4:17   The file itself is not in the database. It sits in
+
+private storage, RustFS [Rust-F-S] here and Cloudflare R2
+
+[say: Cloudflare R-two] in production, under a server-made
+
+key that includes the hash.
+
+[PAUSE 3 seconds - no narration]
+
+
+ON SCREEN: Document Details, then Version History
+
+4:39   Version History shows the fingerprint, shortened.
+
+The full value is in the database.
+
+
+==========================================================
+
+
+SCENE 5: UPLOAD REFUSED: OUTSIDE THE ZONE, AND POOR
+
+ACCURACY
+
+4:47 to 5:53  (66 seconds)
+
+
+ON SCREEN: Upload page, browser location set about a
+
+hundred kilometres outside the zone
+
+4:55   The server answers geofence [JEE-oh-fence] denied,
+
+and nothing is stored. The server decides, never the
+
+browser.
+
+
+ON SCREEN: Upload page, location inside the zone but
+
+accuracy plus or minus 500 metres
+
+5:10   The server refuses this too: location low
+
+confidence [on screen: LOCATION_LOW_CONFIDENCE]. It's
+
+fail-closed: if unsure, it says no. The limit here is
+
+three hundred metres.
+
+
+ON SCREEN: Supplementary view: the audit log row
+
+5:23   The zone denial is written to the audit log, with
+
+the claimed position. The low-confidence refusal happens
+
+earlier and goes to the application log instead.
+
+
+ON SCREEN: Back on the upload page, or a plain slide: the
+
+limit
+
+5:36   An honest limit: browser location can be faked, for
+
+example with developer tools. So geofencing here is
+
+policy, not a guarantee of where someone is. The tamper-
+
+evidence comes from the blockchain.   *** MUST SAY ***
+
+
+==========================================================
+
+
+SCENE 6: REVIEW, MAKER-CHECKER AND APPROVAL
+
+5:53 to 7:15  (82 seconds)
+
+
+ON SCREEN: Document Details as a Legal Officer, on their
+
+own seeded document
+
+6:10   Calling the server directly, from inside the zone,
+
+gives maker checker violation [on screen:
+
+MAKER_CHECKER_VIOLATION]. A real response, nothing
+
+changed.
+
+[PAUSE 3 seconds - no narration]
+
+
+ON SCREEN: Document Details as the Reviewing Officer
+
+6:30   They pass it, and the status becomes Pending
+
+Approval. A reviewer can instead request changes; this app
+
+has no rejected state.
+
+
+ON SCREEN: Document Details as a different Legal Officer:
+
+Approve
+
+6:50   Approval starts anchoring automatically. The
+
+backend's own wallet signs, never the user. It's a real
+
+transaction on the Sepolia [seh-POH-lee-uh] test network,
+
+and I trimmed the wait.
+
+[PAUSE 4 seconds - no narration]
+
+
+ON SCREEN: Status turns Active
+
+7:08   The status becomes Active. It cost a tiny amount of
+
+test Ether [EE-ther], worth nothing.
+
+
+==========================================================
+
+
+SCENE 7: WHAT IS ANCHORED ON SEPOLIA
+
+7:15 to 8:28  (74 seconds)
+
+
+ON SCREEN: Version History: V1 Active and Confirmed, then
+
+the Blockchain Anchor Record
+
+7:24   Two hashes side by side: on the left, the one in
+
+our database; on the right, the one just read live from
+
+the Sepolia contract. They are identical: Match.
+
+
+ON SCREEN: Anchor Record: network label, contract address,
+
+transaction hash
+
+7:49   The contract stores four things per version: the
+
+hash, version number, event type and block time. The PDF,
+
+filename and names are not on-chain, because a blockchain
+
+is public and permanent.
+
+[PAUSE 5 seconds - no narration]
+
+
+ON SCREEN: Etherscan transaction page
+
+8:18   One service wallet signs every anchor; more on that
+
+at the end. And there's no Merkle [MUR-kul] tree: one hash
+
+per file.
+
+
+==========================================================
+
+
+SCENE 8: CLEARANCE: A HIDDEN DOCUMENT IS A 404
+
+8:28 to 9:33  (64 seconds)
+
+
+ON SCREEN: Repository search as the Public-clearance
+
+throwaway user
+
+8:42   Its link shows: That item couldn't be found, or you
+
+don't have access.
+
+
+ON SCREEN: Supplementary view: two identical 404 answers
+
+8:49   The real document and a made-up id give the same
+
+answer: four-oh-four [404], not found. We don't use four-
+
+oh-three [403], forbidden, because that would confirm the
+
+document exists.
+
+[PAUSE 3 seconds - no narration]
+
+
+ON SCREEN: Administrator opens a seeded Confidential
+
+document
+
+9:05   The same rule applies to everyone. The
+
+Administrator, cleared to Internal, opens a Confidential
+
+document and gets a four-oh-four. Administrators get no
+
+automatic access to content.
+
+[PAUSE 3 seconds - no narration]
+
+
+ON SCREEN: Supplementary view: the audit log, access
+
+denied highlighted
+
+9:21   A refused attempt on an existing document is
+
+audited as access denied [on screen: ACCESS_DENIED]. This
+
+is access control inside the application, not encryption.
+
+
+==========================================================
+
+
+SCENE 9: VERIFY THE GENUINE FILE: VERIFIED
+
+9:33 to 10:06  (33 seconds)
+
+
+ON SCREEN: Integrity Verification page for version one, as
+
+the Legal Officer
+
+9:57   A database change alone, or a storage change alone,
+
+can't fake VERIFIED. The chain holds the original.
+
+
+==========================================================
+
+
+SCENE 10: TAMPER WITH THE STORED FILE, RESTORE IT, CLEAR
+
+THE FLAG
+
+10:06 to 11:34  (88 seconds)
+
+
+ON SCREEN: Supplementary view: saving the original bytes
+
+10:06   Now the attack. First I save a local copy of the
+
+original bytes, and check their hash equals the recorded
+
+fingerprint.
+
+
+ON SCREEN: Supplementary view: the tamper script changes
+
+one byte
+
+10:18   Now someone with direct storage access changes one
+
+byte, bypassing the app. The database and the blockchain
+
+still hold the original hash.
+
+[PAUSE 4 seconds - no narration]
+
+
+ON SCREEN: Verification page: red MISMATCH banner
+
+10:50   The document is flagged Tampered. The change was
+
+made evident, not prevented.
+
+
+ON SCREEN: Supplementary view: restoring the original
+
+bytes
+
+11:09   But the Tampered flag stays. A later pass doesn't
+
+clear it.
+
+
+ON SCREEN: Document Details as the Administrator: Clear
+
+integrity flag
+
+11:25   The app re-verifies every anchored version first,
+
+and only then clears the flag. The document is clean
+
+again.
+
+
+==========================================================
+
+
+SCENE 11: AMENDMENT: VERSION TWO
+
+11:34 to 13:48  (134 seconds)
+
+
+ON SCREEN: Document Details as the Legal Officer: Request
+
+amendment
+
+12:18   They give a reason. It moves to Amendment
+
+Requested.
+
+
+ON SCREEN: Amend upload page as Authorized Staff, then
+
+submit
+
+12:33   Version two is a Draft, then submitted.
+
+
+ON SCREEN: Review, then approve (second transaction)
+
+12:43   Then the Legal Officer who didn't upload it
+
+approves. A second real Sepolia transaction, for version
+
+two. Again I trim the wait.
+
+
+ON SCREEN: Version History: V2 Active and Confirmed, V1
+
+grey Superseded
+
+12:56   Version two is Active and Confirmed. Version one
+
+carries the grey Superseded [soo-per-SEE-did] badge. The
+
+Active badge marks the current version.
+
+[PAUSE 4 seconds - no narration]
+
+
+ON SCREEN: Supplementary view: previous-hash field
+
+13:11   Hashes are shortened here, so this view shows the
+
+proof. Version two's previous-hash equals, character for
+
+character, the SHA-256 [say: S-H-A two-fifty-six] of
+
+version one. That hash link is the connection.
+
+[PAUSE 3 seconds - no narration]
+
+
+ON SCREEN: Anchor Record for V2, then Verification of V2
+
+and V1
+
+13:38   Version one still verifies, because its file, hash
+
+and anchor are untouched.
+
+[PAUSE 3 seconds - no narration]
+
+
+==========================================================
+
+
+SCENE 12: DOWNLOAD THE CURRENT VERSION
+
+13:48 to 14:43  (56 seconds)
+
+
+ON SCREEN: Document Details: Download button
+
+13:58   The server gives a pre-signed [pre-SIGNED] link,
+
+valid sixty seconds. The file never passes through the
+
+API. I won't show the link.
+
+
+ON SCREEN: Supplementary views: downloaded-file hash and
+
+the audit row
+
+14:19   The download is audited as ACCESS, as highlighted.
+
+
+ON SCREEN: Refused downloads
+
+14:32   A below-clearance viewer inside the zone gets a
+
+four-oh-four, so the file is never offered. Zone first,
+
+then clearance.
+
+
+==========================================================
+
+
+SCENE 13: ARCHIVE
+
+14:43 to 15:26  (43 seconds)
+
+
+ON SCREEN: Document Details as the Legal Officer: Archive
+
+14:58   Status: Archived.
+
+
+ON SCREEN: Dashboard and Repository, default view, then
+
+the Archived filter
+
+15:12   Archiving keeps every version, anchor and file
+
+untouched. There is no restore route; only direct database
+
+editing could undo it.
+
+[PAUSE 5 seconds - no narration]
+
+
+==========================================================
+
+
+SCENE 14: THE OTHER VERIFICATION OUTCOMES
+
+15:26 to 16:22  (56 seconds)
+
+
+ON SCREEN: Verification page for a seeded draft
+
+15:34   The result is NOT ANCHORED [on screen:
+
+NOT_ANCHORED]. The file is intact, but there's no
+
+blockchain record to compare. Not an alarm.
+
+
+ON SCREEN: Slide: the six outcomes
+
+16:16   I didn't trigger those last three live.
+
+
+==========================================================
+
+
+SCENE 15: LOGIN PROTECTION
+
+16:22 to 16:59  (37 seconds)
+
+
+ON SCREEN: Login page, throwaway account, wrong passwords
+
+16:45   The next try is refused: too many attempts. That
+
+slows password guessing.
+
+
+ON SCREEN: Supplementary view: login rate limits
+
+collection
+
+16:52   In MongoDB [MON-go-D-B], login rate limits [on
+
+screen: login_rate_limits] holds each email's counter and
+
+the pause end.
+
+
+==========================================================
+
+
+SCENE 16: AUDIT LOG, MONGODB AND STORAGE
+
+16:59 to 18:34  (95 seconds)
+
+
+ON SCREEN: Audit Logs page as the Auditor, top of the
+
+table
+
+16:59   Finally, where everything lives. The Auditor opens
+
+Audit Logs, newest first. Every action is a row: who,
+
+what, to what, and the result. Rows are only ever added.
+
+
+ON SCREEN: Audit Logs filters: action, actor, document
+
+17:25   The document filter searches titles, only among
+
+documents this person may open. Here, a seeded board
+
+resolution.
+
+
+ON SCREEN: Document Details: View audit trail for our
+
+lease
+
+17:41   This is the lease's whole life, with names instead
+
+of ids.
+
+
+ON SCREEN: Supplementary views: MongoDB collections and
+
+the bucket
+
+18:24   One honest gap: the audit log has no hash chain
+
+yet, so database writers could alter it.   *** MUST SAY
+
+***
+
+
+==========================================================
+
+
+SCENE 17: REPORTS
+
+18:34 to 19:05  (31 seconds)
+
+
+ON SCREEN: Admin Panel, Reports tab, as the Auditor
+
+18:57   Mismatches counts our tamper test, and the
+
+archived count rose by one: our lease.
+
+
+==========================================================
+
+
+SCENE 18: SUMMARY AND FUTURE WORK
+
+19:05 to 20:24  (80 seconds)
+
+
+ON SCREEN: Summary slide: components
+
+19:05   To summarise: React front end, FastAPI [Fast-A-
+
+P-I] back end in Python, and MongoDB for data. RustFS in
+
+development and Cloudflare R2 in production store files.
+
+web3.py [web-three dot P-Y] talks to a Solidity [sol-ID-
+
+ih-tee] smart contract on Sepolia. Docker runs the
+
+services, and CI runs the tests.   *** ENDS AT 19:28: the
+
+video cuts here, the voice fades out ***
+
+[PAUSE 4 seconds - no narration]
+
+
+ON SCREEN: Slide: honest limits
+
+19:29   Honest limits. This is a prototype on a test
+
+network. Geofencing is policy, not proof of location. One
+
+service wallet signs every anchor. The audit log has no
+
+hash chain yet. One SHA-256 per file, no Merkle tree.
+
+Verification detects tampering; it does not prevent it.
+
+*** CUT - DO NOT RECORD ***
+
+
+ON SCREEN: Slide: future work
+
+19:52   Future work, from the project's own tracker:
+
+stronger login and secret handling, SEC-01 [S-E-C zero-
+
+one] and SEC-03 [S-E-C zero-three]; deployment hardening,
+
+OPS-01 [O-P-S zero-one]; an audit log hash chain, CMP-01
+
+[C-M-P zero-one]; and malware scanning of uploads. Also
+
+per-matter access, and richer display names.   *** CUT -
+
+DO NOT RECORD ***
+
+[PAUSE 6 seconds - no narration]
+
+
+ON SCREEN: Slide: the planned next version
+
+20:15   A planned next version reduces trust in the single
+
+service wallet. I won't describe it here. Thank you.   ***
+
+CUT - DO NOT RECORD ***
+
+
+==========================================================
+

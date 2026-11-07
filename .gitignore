@@ -72,3 +72,16 @@ demo_video2/work/
 demo_video2/samples/
 demo_video2/state.json
 demo_video2/**/__pycache__/
+
+# Personal voice recordings (any format), logs, run outputs and generated reports
+demo_video2/my_voice/
+*.log
+demo/last_run.json
+demo_video2/*.report.json
+
+# Research spikes: local venv
+research/cpop-spikes/.venv/
+
+# Slides with team names and student register numbers: keep local, never publish
+demo_video2/title_slide.png
+demo_video2/thank_you_slide.png
