@@ -60,8 +60,9 @@ async def ensure_indexes() -> None:
     )
     await db["document_versions"].create_index("sha256")
 
-    # sparse: a FAILED anchor attempt (RPC never reachable) has tx_hash=null,
-    # and multiple such rows must not collide on the unique index.
+    # sparse: a FAILED anchor attempt (RPC never reachable) is stored with the
+    # tx_hash key omitted entirely (not null), so multiple such rows do not
+    # collide on the unique index (an explicit null would still be indexed).
     await db["blockchain_anchors"].create_index("tx_hash", unique=True, sparse=True)
     await db["blockchain_anchors"].create_index("version_id")
     # At most one live (PENDING/CONFIRMED) anchor per version (D-023). Rows from

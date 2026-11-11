@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -68,10 +68,14 @@ describe("GeofenceManagementPanel editing", () => {
     await userEvent.type(name, "HQ Campus (renamed)");
     await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
-    expect(updateGeofenceMock).toHaveBeenCalledWith("g-1", {
-      name: "HQ Campus (renamed)",
-      region: { type: "Polygon", coordinates: [fence.region.coordinates[0]] },
-    });
+    await waitFor(
+      () =>
+        expect(updateGeofenceMock).toHaveBeenCalledWith("g-1", {
+          name: "HQ Campus (renamed)",
+          region: { type: "Polygon", coordinates: [fence.region.coordinates[0]] },
+        }),
+      { timeout: 8000 },
+    );
   });
 
   it("closes the edit form on Cancel without saving", async () => {

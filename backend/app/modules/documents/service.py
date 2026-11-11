@@ -1,8 +1,10 @@
 """documents module service layer.
 
-Upload flow (Guardrails #4/#5/#7): validate -> put_object(encrypted bucket,
-server-generated key) -> sha256 -> insert `documents` + `document_versions`
-V1. If storage fails, nothing is written to Mongo at all. If the version
+Upload flow (Guardrails #4/#5/#7): validate -> sha256 -> put_object(private
+bucket, server-generated content-addressed key, which is why the hash comes
+first) -> insert `documents` + `document_versions` V1. Encryption at rest is a
+storage-platform property (R2), not done here. If storage fails, nothing is
+written to Mongo at all. If the version
 insert somehow fails after the document insert succeeded, the document row
 is rolled back — no orphan `documents` metadata either way.
 """

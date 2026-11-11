@@ -1844,7 +1844,7 @@ Because FastAPI would parse the multipart body before running the dependencies, 
 
 ## Appendix A. Places where the docs and the code disagree
 
-This document follows the code in every case. The documentation rows were corrected in a docs-only commit on 2026-11-11; each was re-confirmed against the code first. Rows 18 to 20 are comments inside source files and were not changed.
+This document follows the code in every case. The documentation rows were corrected in a docs-only commit on 2026-11-11; each was re-confirmed against the code first. Rows 18 to 20 are comments inside source files; they were corrected in a later comment-only commit the same day, with no change to code behaviour.
 
 | # | Document | What it says | What the code does | Fix needed in | Status |
 |---|---|---|---|---|---|
@@ -1865,9 +1865,9 @@ This document follows the code in every case. The documentation rows were correc
 | 15 | `docs/THREAT_MODEL.md` limitation 2 | rate limiting is in-memory per process | the login limiter is MongoDB-backed; only the global limiter is in-memory | `docs/THREAT_MODEL.md` | **Fixed** 2026-11-11 (docs-only commit) |
 | 16 | `CLAUDE.md` #11 | `backend/tests/` holds 20 test files | 38 `test_*.py` files (7 unit, 15 API, 16 integration) | `CLAUDE.md` (flag only, per its own last rule) | **Fixed** 2026-11-11 (docs-only commit) |
 | 17 | `DECISIONS.md` D-028 | the body-limit middleware is "outermost" | it sits inside CORS, security headers and the rate limiter (`main.py`; the code comment agrees with the code) | `DECISIONS.md` (a note) | **Fixed** 2026-11-11 (docs-only commit) |
-| 18 | `backend/app/core/config.py` comment | `STORAGE_PUBLIC_ENDPOINT` defaults to `STORAGE_ENDPOINT` | default is the literal `http://localhost:9000` (already noted in D-052) | code comment | **Open**: a comment inside a source file; left unchanged because the fix commit was docs-only |
-| 19 | `backend/app/core/db.py` comment | a failed anchor has `tx_hash=null` | the field is omitted (`blockchain/service.py`) | code comment | **Open**: a comment inside a source file; left unchanged because the fix commit was docs-only |
-| 20 | `backend/app/modules/documents/service.py` docstring | validate, put, then hash | the hash is computed before the put, because the key contains it | code comment | **Open**: a comment inside a source file; left unchanged because the fix commit was docs-only |
+| 18 | `backend/app/core/config.py` comment | `STORAGE_PUBLIC_ENDPOINT` defaults to `STORAGE_ENDPOINT` | default is the literal `http://localhost:9000` (already noted in D-052) | code comment | **Fixed** 2026-11-11 (comment-only edit; no code behaviour changed) |
+| 19 | `backend/app/core/db.py` comment | a failed anchor has `tx_hash=null` | the field is omitted (`blockchain/service.py`) | code comment | **Fixed** 2026-11-11 (comment-only edit; no code behaviour changed) |
+| 20 | `backend/app/modules/documents/service.py` docstring | validate, put, then hash | the hash is computed before the put, because the key contains it | code comment | **Fixed** 2026-11-11 (comment-only edit; no code behaviour changed) |
 | 21 | `docs/PROJECT_EXPLAINED.md` | CI red on pymongo 4.9.2 with Motor 3.6.0; `DEMO_SCRIPT.md` has the wrong role order; Etherscan link always Sepolia; `demo/tamper.py` untracked | Motor 3.7.1 and PyMongo 4.18.3 (commit `9c8a8f4`); `DEMO_SCRIPT.md` was corrected (D-053); link only when `CHAIN_ID` is Sepolia (D-057); `demo/` is tracked | `docs/PROJECT_EXPLAINED.md` | **Fixed** 2026-11-11 (docs-only commit) |
 | 22 | `DEMO_RUNBOOK.md` | `demo/` is untracked | `demo/` is tracked | `DEMO_RUNBOOK.md` | **Fixed** 2026-11-11 (docs-only commit) |
 

@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     # (STORAGE_ENDPOINT=http://storage:9000), but a pre-signed URL is fetched
     # by the browser/host, which can't resolve that name — it needs
     # localhost:9000. In production both endpoints are the same public R2
-    # URL, so this defaults to STORAGE_ENDPOINT when not set separately.
+    # URL. Note: it does NOT default to STORAGE_ENDPOINT; the default is the
+    # literal http://localhost:9000, so set it whenever storage runs elsewhere.
     STORAGE_PUBLIC_ENDPOINT: str = "http://localhost:9000"
     STORAGE_REGION: str = "auto"
     STORAGE_BUCKET: str = "geolegalvault-dev"
