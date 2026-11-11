@@ -43,6 +43,11 @@ already has `replaced_by` set means theft — the whole `family` is revoked).
 
 **Indexes:** `jti` (unique), `family`.
 
+### `login_rate_limits`
+One row per typed login email (whether or not it is a user): `_id` (the lowercased email), `count`, `expires_at`. Failed logins increment it in one atomic update inside a 60 s window; at 5 the email is locked until `expires_at` (`modules/auth/service.py`). Shared by every backend instance.
+
+**Indexes:** `expires_at` (TTL, `expireAfterSeconds: 0`).
+
 ### `geofences`
 | Field | Type | Notes |
 |---|---|---|
@@ -65,19 +70,23 @@ already has `replaced_by` set means theft — the whole `family` is revoked).
 | `classification` | string | one of `PUBLIC < INTERNAL < CONFIDENTIAL < RESTRICTED < TOP_SECRET`, validated on upload, **immutable** afterwards (D-051). A value that is not a level is hidden from every role |
 | `owner_id` | ObjectId | the uploader |
 | `status` | string | lifecycle state — see Plan Part 5 |
-| `current_version_id` | ObjectId \| null | repointed only at final activation (never mid-review) |
+| `current_version_id` | ObjectId \| null | the live, downloadable version. Set to V1 at upload (`create_document_with_v1`); for an amendment it is moved to V(n+1) only at final activation, so the previous version stays live while the new one is in review |
 | `tags` | string[] | |
-| `integrity_flag` | string \| null | set to `"TAMPERED"` by Verify on a MISMATCH; cleared only by the admin-only `POST /documents/{id}/integrity/clear`, which re-verifies every anchored version first and records `{by, at, reason}` in `integrity_cleared` |
+| `integrity_flag` | string \| null | set to `"TAMPERED"` by Verify on a MISMATCH, or to `"UNCONFIRMED"` on ANCHOR_MISSING / FILE_MISSING when no flag is set yet (D-049); cleared only by the admin-only `POST /documents/{id}/integrity/clear`, which re-verifies every anchored version first and records `{by, at, reason}` in `integrity_cleared` |
 | `anchor_pending_alert` | bool | set when an anchor attempt fails; cleared on promotion |
 | `anchor_retry` | object \| absent | REL-01 (D-037): the worker's queue state for a document stuck in APPROVED: `attempts` (failed worker attempts), `last_error` (a fixed code), `permanent` / `permanent_reason`, `queued_at` (when it became stuck; drives the auto-retry age cutoff), `next_attempt_at`, `last_attempt_at`, `lease_owner` / `lease_until` (compare-and-swap lease), `requeued_by` / `requeued_at` (admin re-queue). Removed when the anchor lands. Absent on documents stuck before REL-01; the worker initialises it on first sight |
-| `retention_until` | datetime \| null | |
+| `review_feedback` | object \| null | the latest "changes requested" comment `{comment, reviewer_id, at}`; cleared on resubmission (D-009) |
+| `integrity_cleared` | object \| absent | `{by, at, reason}` of the last successful integrity-flag clear (D-025) |
+| `retention_until` | datetime \| null | always null; not read anywhere (PRODUCTION_READINESS.md CMP-02) |
 | `created_at`, `updated_at` | datetime | |
 
 **Indexes:** `status`; `owner_id`; compound `{status, doc_type}`; text index on `{title, tags}`.
 
-**Mutation discipline:** `documents/service.py` exposes only whitelisted setters
-(`update_status`, `set_current_version`, `set_anchor_alert`, `set_integrity_flag`) —
-nothing writes arbitrary fields on an existing document.
+**Mutation discipline:** `documents/service.py` exposes only named setters
+(`update_status`, `claim_status` (the compare-and-swap used by every transition, D-023),
+`set_current_version`, `set_anchor_alert`, `set_integrity_flag`, `flag_integrity_unconfirmed`,
+`clear_integrity_flag`, `set_review_feedback`), and `modules/blockchain/retry.py` writes the
+`anchor_retry` sub-document — nothing writes arbitrary fields on an existing document.
 
 ### `document_versions` (insert-only)
 | Field | Type | Notes |
@@ -156,7 +165,7 @@ check).
 | `meta` | object | freeform context (e.g. `{comment: ...}`, `{tx_hash: ...}`) |
 | `created_at` | datetime | |
 
-**Indexes:** `{actor_id, created_at desc}`, `action`, `location` (2dsphere).
+**Indexes:** `{actor_id, created_at desc}`, `action`, `{created_at desc}`, `{target_id, created_at desc}` (the last two added for the audit page, D-055), `location` (2dsphere).
 
 **Write discipline:** `modules/audit/service.py` exposes exactly one write function
 (`record`, an insert) and one read function (`list_audit_logs`); there is no update or

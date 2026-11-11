@@ -684,7 +684,7 @@ stateDiagram-v2
     ACTIVE --> ARCHIVED: archive
 ```
 
-`review()` performs `SUBMITTED → UNDER_REVIEW → PENDING_APPROVAL` (or `→ CHANGES_REQUESTED → DRAFT`) in one request, so users rarely see `UNDER_REVIEW` or `CHANGES_REQUESTED` on screen (`workflow.py`). Archiving is accepted only from `ACTIVE` (`workflow.py` `archive` requires `ACTIVE`) **[docs differ: `docs/API.md` and Plan Part 5 say `ACTIVE/SUPERSEDED → ARCHIVED`]**. A document's status is never `SUPERSEDED`; that value is used for versions.
+`review()` performs `SUBMITTED → UNDER_REVIEW → PENDING_APPROVAL` (or `→ CHANGES_REQUESTED → DRAFT`) in one request, so users rarely see `UNDER_REVIEW` or `CHANGES_REQUESTED` on screen (`workflow.py`). Archiving is accepted only from `ACTIVE` (`workflow.py` `archive` requires `ACTIVE`) `docs/API.md` and `docs/USER_GUIDE.md` said `ACTIVE/SUPERSEDED → ARCHIVED` until the 2026-11-11 docs fix (Appendix A row 4); Plan Part 5 still shows the original design. A document's status is never `SUPERSEDED`; that value is used for versions.
 
 ### 9.3 Transition table
 
@@ -764,7 +764,7 @@ Generated on 2026-11-10 by listing `app.routes` from `backend/app/main.py`; perm
 | GET | `/reports/summary` | `audit:view` | no | Counts by status and type, anchoring counts and success rate, verification counts for 30 days, geofence denial count |
 | GET | `/health` | none | no | `status`, `mongo`, `storage`, `chain`, `anchor_worker` |
 
-There is deliberately no route that anchors on demand and no route that changes a document's classification (Guardrails #3 and #13). The `docs/API.md` table does not list `/users/me`, `/audit/actions`, `/blockchain/anchors/attention` or the retry route **[docs differ: `docs/API.md`]**; the retry and attention routes are described in `DECISIONS.md` D-041.
+There is deliberately no route that anchors on demand and no route that changes a document's classification (Guardrails #3 and #13). Until the 2026-11-11 docs fix the `docs/API.md` table did not list `/users/me`, `/audit/actions`, `/blockchain/anchors/attention` or the retry route (Appendix A row 6); the retry and attention routes are also described in `DECISIONS.md` D-041.
 
 ### 10.3 Example request and response shapes
 
@@ -897,10 +897,10 @@ Built from the threat table in `docs/THREAT_MODEL.md`, checked against the code 
 | 6 | Forgotten permission check on a new route | `require(permission)` on every protected route; role-by-endpoint matrix test (`tests/api/test_authz_matrix.py`) | none recorded |
 | 7 | Malicious upload | Size cap, type allow-list, libmagic must agree with the claimed type | No malware scan (THREAT_MODEL limitation 2b). Content checks are shallow: an EICAR string or JavaScript as `text/plain`, a zip as `.docx`, a PDF with JavaScript were accepted in the audit (SEC-04, open). |
 | 8 | Path tricks in storage keys | Server-generated, content-addressed keys | none recorded |
-| 9 | Public bucket | Private bucket; only 60 s pre-signed GET URLs; API never streams bytes (Guardrail #4) | Pre-signed URLs set no `Content-Disposition`, so "files are never served inline" (THREAT_MODEL row 7) is not supported by the code (SEC-18) **[docs differ: `docs/THREAT_MODEL.md` row 7]**. |
+| 9 | Public bucket | Private bucket; only 60 s pre-signed GET URLs; API never streams bytes (Guardrail #4) | Pre-signed URLs set no `Content-Disposition`, so a browser may display a file inline (SEC-18); `docs/THREAT_MODEL.md` row 7 said otherwise until the 2026-11-11 docs fix (Appendix A row 12). |
 | 10 | NoSQL injection | Typed filter dictionaries from validated input; audit filter strings length-capped and whitelisted (D-055) | none recorded |
 | 11 | Request flooding | Global 120 requests per minute per IP; request body caps before reading | In-memory per process, trusts `X-Forwarded-For`, unbounded dictionary (SEC-10, open). Slow-body attacks are left to the deployment layer (D-031). |
-| 12 | Replay of a location reading | 60 s freshness window | Future-dated timestamps are accepted, so a captured header set never expires (SEC-12, open) **[docs differ: `docs/THREAT_MODEL.md` row 12 calls the freshness window a replay control]**. |
+| 12 | Replay of a location reading | 60 s freshness window | Future-dated timestamps are accepted, so a captured header set never expires (SEC-12, open); `docs/THREAT_MODEL.md` row 12 now says so (Appendix A row 13). |
 | 13 | Service-wallet key stolen | Key only in environment or platform secret store; never logged; contract writer allow-list | A thief could anchor false hashes for (document, version) pairs not yet anchored, making them permanently un-anchorable, and could spend the wallet's balance. No ownership transfer or pause exists in the contract (BC-02). This single-wallet design is a known limit of v1. |
 | 14 | Faked location | Server decides; never reads a client "allowed" flag; fails closed on poor accuracy or old readings; denials audited | **A client that reports a position inside the fence is believed.** Residual risk "High (accepted)" (THREAT_MODEL row 14). Client-reported location is a known limit of v1. |
 | 15 | Client-supplied "inside" flag | No endpoint reads one (Guardrail #5) | none |
@@ -1662,8 +1662,8 @@ The code path is identical apart from the RPC URL, and a real Sepolia round trip
 **Q99. Why does `/health` say the chain is reachable or degraded when that probe isn't the chain you anchor to?**
 It is a gap: `/health` probes `CHAIN_RPC_URL` (by default the placeholder at port 8545), not `SEPOLIA_RPC_URL`. A real approval is the reliable check (`main.py`, `demo_video2/TROUBLESHOOTING.md`).
 
-**Q100. The README says 10 contract tests. How many are there?**
-Nine `it(...)` cases in `contracts/test/DocumentAnchor.test.ts`; the "10" came from also counting the `.to.emit(` call. See Appendix A.
+**Q100. Earlier docs said 10 contract tests. How many are there?**
+Nine `it(...)` cases in `contracts/test/DocumentAnchor.test.ts`, all passing on 2026-11-11; the "10" came from also counting the `.to.emit(` call. The docs were corrected on 2026-11-11 (Appendix A row 1).
 
 **Q101. If the worker and the API both send for the same version, could you get two anchors?**
 No: the contract reverts the second one. You could get one wasted, reverted transaction; the lease is there to make that rare (D-037).
@@ -1844,32 +1844,32 @@ Because FastAPI would parse the multipart body before running the dependencies, 
 
 ## Appendix A. Places where the docs and the code disagree
 
-This document follows the code in every case. None of these files was changed.
+This document follows the code in every case. The documentation rows were corrected in a docs-only commit on 2026-11-11; each was re-confirmed against the code first. Rows 18 to 20 are comments inside source files and were not changed.
 
-| # | Document | What it says | What the code does | Fix needed in |
-|---|---|---|---|---|
-| 1 | `README.md`, `docs/TEST_PLAN.md`, `docs/PROJECT_EXPLAINED.md`, `PROJECT_ANALYSIS.md` | 10 contract test cases | 9 `it(...)` cases in `contracts/test/DocumentAnchor.test.ts` (the extra one is `.to.emit(`) | all four |
-| 2 | `README.md`, `docs/TEST_PLAN.md` | 346 backend and 127 frontend tests | see the fresh counts in section 14.2 | both |
-| 3 | `README.md` | the frontend "calls the backend's `/api/v1/health` and renders the JSON response"; the Hardhat node is "implemented in Phase 5" | the frontend is the full application; the compose `hardhat-node` is still only a placeholder | `README.md` |
-| 4 | `docs/API.md`, `docs/USER_GUIDE.md`, Plan Part 5 | archive from `ACTIVE/SUPERSEDED` | `archive()` accepts only `ACTIVE` | `docs/API.md`, `docs/USER_GUIDE.md` |
-| 5 | `docs/API.md` | location sent as form or JSON fields, example timestamp in ISO 8601 | the UI sends `X-Geo-*` headers; the server also accepts body fields; `timestamp` must be Unix seconds (a float), so an ISO string fails validation | `docs/API.md` |
-| 6 | `docs/API.md` | endpoint table | misses `GET /users/me`, `GET /audit/actions`, `GET /blockchain/anchors/attention`, `POST /blockchain/anchors/{id}/retry` | `docs/API.md` |
-| 7 | `docs/API.md` | `auth` and `users` routers use plain `detail` errors | `users` also raises `SELF_LOCKOUT` and `SELF_CLEARANCE_CHANGE` in the `{error: {code, message}}` envelope | `docs/API.md` |
-| 8 | `docs/DB_DESIGN.md` | `current_version_id` is "repointed only at final activation (never mid-review)" | set to V1 at upload; for amendments moved only at activation | `docs/DB_DESIGN.md` |
-| 9 | `docs/DB_DESIGN.md` | lists of setters and indexes | also `claim_status`, `set_review_feedback`, `flag_integrity_unconfirmed`, `clear_integrity_flag`; audit indexes on `created_at` and `(target_id, created_at)`; collection `login_rate_limits`; document fields `review_feedback`, `integrity_cleared` | `docs/DB_DESIGN.md` |
-| 10 | `docs/SRS.md` | "encrypted document upload", "stores ... encrypted object"; MinIO for local dev; verify returns three results; FR-21 in-app notifications | the app does not encrypt files; RustFS locally; six results; no notifications at all (FUN-01) | `docs/SRS.md` |
-| 11 | `docs/USER_GUIDE.md` | Settings lets you change your password; Auditor "sees everything"; fences drawn "on a map"; three verify results | no password endpoint (SEC-01); Auditor limited by clearance; no map widget (D-027); six results | `docs/USER_GUIDE.md` |
-| 12 | `docs/THREAT_MODEL.md` row 7 | files are never served inline | pre-signed URLs set no `Content-Disposition` (SEC-18) | `docs/THREAT_MODEL.md` |
-| 13 | `docs/THREAT_MODEL.md` row 12 | freshness window as a replay control | future-dated timestamps are accepted (SEC-12) | `docs/THREAT_MODEL.md` |
-| 14 | `docs/THREAT_MODEL.md` rows 16 and 19, assets table | audit log "append-only"; storage "R2 / MinIO" | append-only only by convention, no integrity field (CMP-01); RustFS locally | `docs/THREAT_MODEL.md` |
-| 15 | `docs/THREAT_MODEL.md` limitation 2 | rate limiting is in-memory per process | the login limiter is MongoDB-backed; only the global limiter is in-memory | `docs/THREAT_MODEL.md` |
-| 16 | `CLAUDE.md` #11 | `backend/tests/` holds 20 test files | 38 `test_*.py` files (7 unit, 15 API, 16 integration) | `CLAUDE.md` (flag only, per its own last rule) |
-| 17 | `DECISIONS.md` D-028 | the body-limit middleware is "outermost" | it sits inside CORS, security headers and the rate limiter (`main.py`; the code comment agrees with the code) | `DECISIONS.md` (a note) |
-| 18 | `backend/app/core/config.py` comment | `STORAGE_PUBLIC_ENDPOINT` defaults to `STORAGE_ENDPOINT` | default is the literal `http://localhost:9000` (already noted in D-052) | code comment |
-| 19 | `backend/app/core/db.py` comment | a failed anchor has `tx_hash=null` | the field is omitted (`blockchain/service.py`) | code comment |
-| 20 | `backend/app/modules/documents/service.py` docstring | validate, put, then hash | the hash is computed before the put, because the key contains it | code comment |
-| 21 | `docs/PROJECT_EXPLAINED.md` | CI red on pymongo 4.9.2 with Motor 3.6.0; `DEMO_SCRIPT.md` has the wrong role order; Etherscan link always Sepolia; `demo/tamper.py` untracked | Motor 3.7.1 and PyMongo 4.18.3 (commit `9c8a8f4`); `DEMO_SCRIPT.md` was corrected (D-053); link only when `CHAIN_ID` is Sepolia (D-057); `demo/` is tracked | `docs/PROJECT_EXPLAINED.md` |
-| 22 | `DEMO_RUNBOOK.md` | `demo/` is untracked | `demo/` is tracked | `DEMO_RUNBOOK.md` |
+| # | Document | What it says | What the code does | Fix needed in | Status |
+|---|---|---|---|---|---|
+| 1 | `README.md`, `docs/TEST_PLAN.md`, `docs/PROJECT_EXPLAINED.md`, `PROJECT_ANALYSIS.md` | 10 contract test cases | 9 `it(...)` cases in `contracts/test/DocumentAnchor.test.ts` (the extra one is `.to.emit(`) | all four | **Fixed** 2026-11-11 (docs-only commit) |
+| 2 | `README.md`, `docs/TEST_PLAN.md` | 346 backend and 127 frontend tests | see the fresh counts in section 14.2 | both | **Fixed** 2026-11-11 (docs-only commit) (now 370 backend, 146 frontend, 9 contract) |
+| 3 | `README.md` | the frontend "calls the backend's `/api/v1/health` and renders the JSON response"; the Hardhat node is "implemented in Phase 5" | the frontend is the full application; the compose `hardhat-node` is still only a placeholder | `README.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 4 | `docs/API.md`, `docs/USER_GUIDE.md`, Plan Part 5 | archive from `ACTIVE/SUPERSEDED` | `archive()` accepts only `ACTIVE` | `docs/API.md`, `docs/USER_GUIDE.md` | **Fixed** 2026-11-11 (docs-only commit) in `docs/API.md` and `docs/USER_GUIDE.md`; Plan Part 5 is the original design plan and was left as written |
+| 5 | `docs/API.md` | location sent as form or JSON fields, example timestamp in ISO 8601 | the UI sends `X-Geo-*` headers; the server also accepts body fields; `timestamp` must be Unix seconds (a float), so an ISO string fails validation | `docs/API.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 6 | `docs/API.md` | endpoint table | misses `GET /users/me`, `GET /audit/actions`, `GET /blockchain/anchors/attention`, `POST /blockchain/anchors/{id}/retry` | `docs/API.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 7 | `docs/API.md` | `auth` and `users` routers use plain `detail` errors | `users` also raises `SELF_LOCKOUT` and `SELF_CLEARANCE_CHANGE` in the `{error: {code, message}}` envelope | `docs/API.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 8 | `docs/DB_DESIGN.md` | `current_version_id` is "repointed only at final activation (never mid-review)" | set to V1 at upload; for amendments moved only at activation | `docs/DB_DESIGN.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 9 | `docs/DB_DESIGN.md` | lists of setters and indexes | also `claim_status`, `set_review_feedback`, `flag_integrity_unconfirmed`, `clear_integrity_flag`; audit indexes on `created_at` and `(target_id, created_at)`; collection `login_rate_limits`; document fields `review_feedback`, `integrity_cleared` | `docs/DB_DESIGN.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 10 | `docs/SRS.md` | "encrypted document upload", "stores ... encrypted object"; MinIO for local dev; verify returns three results; FR-21 in-app notifications | the app does not encrypt files; RustFS locally; six results; no notifications at all (FUN-01) | `docs/SRS.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 11 | `docs/USER_GUIDE.md` | Settings lets you change your password; Auditor "sees everything"; fences drawn "on a map"; three verify results | no password endpoint (SEC-01); Auditor limited by clearance; no map widget (D-027); six results | `docs/USER_GUIDE.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 12 | `docs/THREAT_MODEL.md` row 7 | files are never served inline | pre-signed URLs set no `Content-Disposition` (SEC-18) | `docs/THREAT_MODEL.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 13 | `docs/THREAT_MODEL.md` row 12 | freshness window as a replay control | future-dated timestamps are accepted (SEC-12) | `docs/THREAT_MODEL.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 14 | `docs/THREAT_MODEL.md` rows 16 and 19, assets table | audit log "append-only"; storage "R2 / MinIO" | append-only only by convention, no integrity field (CMP-01); RustFS locally | `docs/THREAT_MODEL.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 15 | `docs/THREAT_MODEL.md` limitation 2 | rate limiting is in-memory per process | the login limiter is MongoDB-backed; only the global limiter is in-memory | `docs/THREAT_MODEL.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 16 | `CLAUDE.md` #11 | `backend/tests/` holds 20 test files | 38 `test_*.py` files (7 unit, 15 API, 16 integration) | `CLAUDE.md` (flag only, per its own last rule) | **Fixed** 2026-11-11 (docs-only commit) |
+| 17 | `DECISIONS.md` D-028 | the body-limit middleware is "outermost" | it sits inside CORS, security headers and the rate limiter (`main.py`; the code comment agrees with the code) | `DECISIONS.md` (a note) | **Fixed** 2026-11-11 (docs-only commit) |
+| 18 | `backend/app/core/config.py` comment | `STORAGE_PUBLIC_ENDPOINT` defaults to `STORAGE_ENDPOINT` | default is the literal `http://localhost:9000` (already noted in D-052) | code comment | **Open**: a comment inside a source file; left unchanged because the fix commit was docs-only |
+| 19 | `backend/app/core/db.py` comment | a failed anchor has `tx_hash=null` | the field is omitted (`blockchain/service.py`) | code comment | **Open**: a comment inside a source file; left unchanged because the fix commit was docs-only |
+| 20 | `backend/app/modules/documents/service.py` docstring | validate, put, then hash | the hash is computed before the put, because the key contains it | code comment | **Open**: a comment inside a source file; left unchanged because the fix commit was docs-only |
+| 21 | `docs/PROJECT_EXPLAINED.md` | CI red on pymongo 4.9.2 with Motor 3.6.0; `DEMO_SCRIPT.md` has the wrong role order; Etherscan link always Sepolia; `demo/tamper.py` untracked | Motor 3.7.1 and PyMongo 4.18.3 (commit `9c8a8f4`); `DEMO_SCRIPT.md` was corrected (D-053); link only when `CHAIN_ID` is Sepolia (D-057); `demo/` is tracked | `docs/PROJECT_EXPLAINED.md` | **Fixed** 2026-11-11 (docs-only commit) |
+| 22 | `DEMO_RUNBOOK.md` | `demo/` is untracked | `demo/` is tracked | `DEMO_RUNBOOK.md` | **Fixed** 2026-11-11 (docs-only commit) |
 
 ---
 

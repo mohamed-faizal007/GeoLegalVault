@@ -28,7 +28,8 @@ demo.
 ## 2. Scope
 
 **In scope:** authentication/JWT, RBAC (5 roles, deny-by-default), geofence CRUD +
-server-side enforcement, encrypted document upload/download, SHA-256 hashing, immutable
+server-side enforcement, private-storage document upload/download (encryption at rest is a
+property of the storage platform, not of the application), SHA-256 hashing, immutable
 versioning, review/approval/amendment/archival workflow, blockchain anchoring on
 approval, 3-way integrity verification, append-only audit log, admin/reporting UI, CI,
 deployment to a free-tier cloud stack.
@@ -64,7 +65,7 @@ Each FR below is implemented; see the referenced module for the authoritative be
 | FR-5 | Admin lists/edits/deactivates users; hard-delete is never exposed. | `modules/users` |
 | FR-6 | Admin manages GeoJSON polygon geofences with a 2dsphere index. | `modules/geofences` |
 | FR-7 | Sensitive ops require server-recomputed point-in-polygon; low accuracy/staleness fail closed (422); outside-fence is 403. Client "allowed" flags are never trusted. | `services/geofence.py` |
-| FR-8 | Upload validates size/MIME/magic bytes, stores server-side-keyed encrypted object, computes SHA-256, creates `documents` + V1 `document_versions`. Storage failure leaves no orphan metadata. | `modules/documents` |
+| FR-8 | Upload validates size/MIME/magic bytes, stores the object under a server-generated key in a private bucket (the application does not encrypt files; Cloudflare R2 encrypts at rest, local RustFS does not), computes SHA-256, creates `documents` + V1 `document_versions`. Storage failure leaves no orphan metadata. | `modules/documents` |
 | FR-9 | Download is a short-lived pre-signed URL; the API never proxies file bytes. | `modules/documents`, `services/storage.py` |
 | FR-10 | Search/filter/paginate by title, tags, status, doc_type, owner, date range. | `modules/documents` |
 | FR-11 | Core provenance fields (hash, storage key, version_no) are immutable once written. | `modules/versions` |
@@ -75,9 +76,9 @@ Each FR below is implemented; see the referenced module for the authoritative be
 | FR-16 | SHA-256 computed server-side on exact stored bytes, at upload and at every verify. | `services/hashing.py` |
 | FR-17 | Approval sends `anchor(documentId, version, hash, eventType)` via the backend service wallet; tx hash/block recorded in `blockchain_anchors`. | `services/blockchain.py`, `modules/blockchain` |
 | FR-18 | On-chain record is independently readable (`getAnchor`) and compared against the DB. | `modules/blockchain` |
-| FR-19 | Verify recomputes SHA-256 from live storage bytes and 3-way-compares against stored + on-chain hash → VERIFIED / MISMATCH / NOT_ANCHORED, and records every check. | `modules/verify` |
+| FR-19 | Verify recomputes SHA-256 from live storage bytes and 3-way-compares against stored + on-chain hash → one of six results: VERIFIED / MISMATCH / NOT_ANCHORED / ANCHOR_MISSING / FILE_MISSING / CHAIN_UNREACHABLE (D-049), and records every check. A storage outage is `503 STORAGE_UNAVAILABLE` with no result. | `modules/verify` |
 | FR-20 | Every security-relevant action (login, upload, geofence denial, review/approve/anchor outcome, verify outcome, archive, …) is written to an append-only `audit_logs`, queryable by Auditor/Admin only. | `modules/audit` |
-| FR-21 | In-app only — no email notifications (cut per the plan's "golden rule" priority list; not required for the MVP loop). |  |
+| FR-21 | Not implemented: there are no notifications of any kind, neither email (cut per the plan's "golden rule" priority list) nor in-app (PRODUCTION_READINESS.md FUN-01, open). Users see pending work through the Dashboard queue counts. |  |
 | FR-22 | Admin panel: users, geofences, reports, system health. | frontend `AdminPanel.tsx` |
 | FR-23 | `/reports/summary` aggregates counts by status/type, anchor success rate, recent verifications, geofence-denied counts. | `modules/reports` |
 | FR-24 | Archival hides a document from the default repository list but retains every version and anchor; reachable via an explicit status filter. | `modules/documents` |
@@ -101,7 +102,7 @@ Each FR below is implemented; see the referenced module for the authoritative be
 - Frontend: React + Vite + TypeScript + Tailwind + TanStack Query.
 - Blockchain: Solidity 0.8.20 on Sepolia via Hardhat + web3.py; one custodial service wallet
   signs every anchor — there is no per-user MetaMask flow anywhere.
-- Storage: any S3-compatible endpoint (Cloudflare R2 in production, MinIO in local dev).
+- Storage: any S3-compatible endpoint (Cloudflare R2 in production, RustFS in local dev and CI; MinIO before D-034).
 - No Merkle trees, no NLP, no microservices/message brokers, no mainnet deployment
   (Guardrail #8).
 
@@ -109,7 +110,7 @@ Each FR below is implemented; see the referenced module for the authoritative be
 
 Mirrors the project's Global Definition of Done (Plan Part G / `IMPLEMENTATION_PROMPT.md`):
 admin-provisioned login works; sensitive ops are blocked outside an authorized geofence
-and allowed inside (demonstrated with two real locations); upload → encrypt → hash →
+and allowed inside (demonstrated with two real locations); upload → store privately → hash →
 store metadata works; approval anchors on Sepolia with a resolvable Etherscan link;
 amendment produces an independently verifiable V2 without destroying V1; Verify returns
 VERIFIED for an untouched file and MISMATCH (live, in front of the reviewer) for a

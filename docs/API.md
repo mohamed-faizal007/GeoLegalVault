@@ -34,6 +34,7 @@ no specific permission.
 | POST | `/auth/refresh` | refresh cookie | Rotate access token |
 | POST | `/auth/logout` | any | Revoke current session |
 | POST | `/users` | `users:manage` | Create a user |
+| GET | `/users/me` | any | The caller's own name, email, role and clearance (D-054) |
 | GET | `/users` | `users:manage` | List users (paginated) |
 | PATCH | `/users/{id}` | `users:manage` | Update/deactivate a user |
 | POST | `/geofences` | `geofence:manage` | Create a geofence |
@@ -45,17 +46,21 @@ no specific permission.
 | GET | `/documents/{id}` | `document:view` | Document metadata |
 | GET | `/documents/{id}/download` | `document:view` + geofence | Short-lived pre-signed download URL |
 | GET | `/documents/{id}/versions` | `document:view` | Full version lineage |
-| POST | `/documents/{id}/submit` | `document:submit`, owner only | DRAFT → SUBMITTED |
+| POST | `/documents/{id}/submit` | `document:submit`, uploader of the current version only (D-016) | DRAFT → SUBMITTED |
 | POST | `/documents/{id}/review` | `review:perform`, reviewer ≠ uploader | Review decision (approve-to-next-stage or request changes) |
 | POST | `/documents/{id}/approve` | `approve:perform` + geofence, approver ≠ uploader | Approve → auto-triggers anchoring |
 | POST | `/documents/{id}/amend` | `document:amend` + geofence | Start an amendment (ACTIVE → AMENDMENT_REQUESTED) |
-| POST | `/documents/{id}/archive` | `document:archive` | Archive (ACTIVE/SUPERSEDED → ARCHIVED) |
+| POST | `/documents/{id}/archive` | `document:archive` | Archive (ACTIVE → ARCHIVED only; any other status is `409 ILLEGAL_TRANSITION`) |
+| POST | `/documents/{id}/integrity/clear` | `integrity:clear` | Re-verify every anchored version, then clear a `TAMPERED`/`UNCONFIRMED` flag (see below) |
 | POST | `/verify/{version_id}` | `verify:perform` | Run the 3-way integrity check |
 | GET | `/verify/{version_id}/history` | `verify:perform` or `audit:view` | Past verification records for a version |
-| GET | `/blockchain/anchor/{version_id}` | `document:view` | Stored + on-chain anchor record, with Etherscan link |
+| GET | `/blockchain/anchor/{version_id}` | `document:view` | Stored + on-chain anchor record; an Etherscan link only when `CHAIN_ID` is Sepolia (D-057) |
+| GET | `/blockchain/anchors/attention` | `anchor:view` | Documents left `APPROVED` because their anchor has not landed (D-041) |
+| POST | `/blockchain/anchors/{document_id}/retry` | `anchor:retry` + geofence | Administrator re-queue for the worker; body `{reason}` only (10-1000 characters, extra fields refused); never contacts the chain (D-041) |
+| GET | `/audit/actions` | `audit:view` | Distinct audit action names, for the filter dropdown (D-055) |
 | GET | `/audit` | `audit:view` | Query the audit log (filterable, paginated) |
 | GET | `/reports/summary` | `audit:view` | Aggregate counts (status, anchor success rate, verifications, geofence denials) |
-| GET | `/health` | none | `{status, mongo, storage, chain}` reachability |
+| GET | `/health` | none | `{status, mongo, storage, chain, anchor_worker}`; `chain` probes `CHAIN_RPC_URL`, not `SEPOLIA_RPC_URL` |
 
 There is deliberately **no** endpoint that lets a user trigger anchoring directly —
 anchoring is only ever a system-triggered side effect of `POST /documents/{id}/approve`
@@ -64,7 +69,10 @@ anchoring is only ever a system-triggered side effect of `POST /documents/{id}/a
 ### Location payload (sensitive endpoints)
 
 Endpoints marked "+ geofence" above require `{lat, lng, accuracy, timestamp}` alongside
-the request (form fields on the multipart upload, JSON body fields elsewhere). The server
+the request, normally as the headers `X-Geo-Lat`, `X-Geo-Lng`, `X-Geo-Accuracy` and
+`X-Geo-Timestamp` (what the frontend sends). If those headers are absent, the same four fields
+are read from the form body (multipart upload) or the JSON body. `timestamp` is **Unix epoch
+seconds** (a number); an ISO 8601 string is rejected as `422 INVALID_LOCATION`. The server
 independently runs the `$geoIntersects` check — it never reads or trusts any client-sent
 "inside the fence" flag.
 
@@ -73,7 +81,7 @@ independently runs the `$geoIntersects` check — it never reads or trusts any c
 ```http
 POST /api/v1/documents  (multipart/form-data)
 file=@nda.pdf; title=Vendor NDA; doc_type=NDA; classification=CONFIDENTIAL; tags=nda,vendor
-lat=11.67; lng=78.15; accuracy=25; timestamp=2026-09-01T10:00:00Z
+headers: X-Geo-Lat: 11.67; X-Geo-Lng: 78.15; X-Geo-Accuracy: 25; X-Geo-Timestamp: 1788256800
 
 201 {"document_id": "...", "version_id": "...", "status": "DRAFT", "sha256": "a1b2..."}
 403 {"error": {"code": "GEOFENCE_DENIED", "message": "..."}}
@@ -159,8 +167,9 @@ Most endpoints (everything under `documents`, `versions`, `geofences`, `verify`,
 {"error": {"code": "GEOFENCE_DENIED", "message": "human-readable detail"}}
 ```
 
-The `auth` and `users` routers instead raise plain FastAPI `HTTPException`s, which render
-as `{"detail": "..."}` — this asymmetry is real (not a documentation gap): auth failures
+The `auth` and `users` routers mostly raise plain FastAPI `HTTPException`s, which render
+as `{"detail": "..."}` (the exceptions are `users`' `SELF_LOCKOUT` and `SELF_CLEARANCE_CHANGE`,
+which use the shared envelope) — this asymmetry is real (not a documentation gap): auth failures
 deliberately return a generic, uninformative detail string (no user enumeration), where
 the structured `{code, message}` shape elsewhere exists precisely so a frontend can branch
 on `code` (e.g. show "you're outside the authorized location" for `GEOFENCE_DENIED` vs.

@@ -260,7 +260,7 @@ how a guardrail silently breaks.
 
 **Enforced at:**
 - [`docs/DEVELOPER_GUIDE.md:126`](docs/DEVELOPER_GUIDE.md#L126) — states the rule directly.
-- `backend/tests/` contains 20 test files across `unit/`, `api/`, and `integration/`, including `test_geofence.py`, `test_require_geofence.py`, `test_hashing.py`, `test_rbac.py`, `test_authz_matrix.py` (role × endpoint matrix), `test_workflow.py`, and `test_anchor.py` — directly covering every core service this guardrail names. Git history (commit `34bec7e`) records "full test suite (114 tests, 92% cov)."
+- `backend/tests/` contains 38 test files (7 in `unit/`, 15 in `api/`, 16 in `integration/`; counted 2026-11-11), including `test_geofence.py`, `test_require_geofence.py`, `test_hashing.py`, `test_rbac.py`, `test_authz_matrix.py` (role × endpoint matrix), `test_workflow.py`, and `test_anchor.py` — directly covering every core service this guardrail names. Git history (commit `34bec7e`) records "full test suite (114 tests, 92% cov)" at Phase 11; a full run on 2026-11-11 gave 370 passed, 94.07% coverage.
 
 **Don't:** merge a change to `geofence.py`, `rbac.py`, the workflow state machine, or the
 contract without adding/updating tests in the same change.

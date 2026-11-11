@@ -6,7 +6,7 @@ Where I could not verify something, it says **"screenshot in rehearsal"** or **U
 **Assumptions (your brief had blanks — fix them if wrong):**
 - Project: GeoLegalVault. Audience: faculty/evaluators, technical (they know web apps, some blockchain).
 - Time: **10 minutes** (the length `docs/DEMO_SCRIPT.md` is written for).
-- Windows 11, PowerShell. Repo root: `c:\Faizal\Block chain prj\GeoLegalVault`.
+- Windows 11, PowerShell. Repo root: wherever you cloned the repository; the commands below write it as `<repo-root>`.
 
 ---
 
@@ -39,7 +39,7 @@ Where I could not verify something, it says **"screenshot in rehearsal"** or **U
 | `docker compose --profile worker up …` | Starts the anchor worker. It signs and sends real transactions with your wallet key and may re-send old stuck rows (`docker-compose.yml` comment). |
 | `docker compose up --build` / `docker compose build` | Rebuilds the backend image and runs `pip install`. Needs internet and can break a working image. Your image already exists. |
 | `docker pull …`, `npm install`, `npm audit fix`, `pip install` | Network changes right before a demo. Only do these in Part 4 if a specific error tells you to. |
-| `git pull`, `git checkout`, `git reset`, `git clean` | `demo/` is **untracked** (`?? demo/`). `git clean` would delete `demo/tamper.py`, which you need. |
+| `git pull`, `git checkout`, `git reset`, `git clean -x` | They can change or remove files the demo relies on; `git clean -x` also deletes git-ignored files such as `.env`. (`demo/tamper.py` is tracked in git.) |
 | `python scripts/seed.py --email … --password …` | Creates an extra user with a password in shell history. Not needed. |
 | Stopping or deleting any `proofchain-*` volume | That is a different project. Stop its containers (Part 1) but never delete its data. |
 
@@ -63,11 +63,11 @@ Open PowerShell. Every block below can be pasted as is.
 ### Step 1 — Go to the repo and check git
 
 ```powershell
-cd "c:\Faizal\Block chain prj\GeoLegalVault"
+cd "<repo-root>"
 git status --short
 ```
 
-**Expected:** one line: `?? demo/`.
+**Expected:** no output (a clean working tree; `demo/` is tracked in git).
 **Bad result:** any `M` or other lines means files changed since I looked. Run `git diff --stat` and find out why.
 
 ### Step 2 — Stop the other project (`proofchain`) and free the ports
@@ -190,7 +190,7 @@ The seed script skips users that already exist (`seed.py` prints "already exists
 Leave this window open the whole demo:
 
 ```powershell
-cd "c:\Faizal\Block chain prj\GeoLegalVault\frontend"
+cd "<repo-root>\frontend"
 npm run dev
 ```
 
@@ -216,7 +216,7 @@ Run Part 3 from start to end with a throwaway document. Time every step with a s
 ### Step 12 — One hour before: reset the state you need, not more
 
 ```powershell
-cd "c:\Faizal\Block chain prj\GeoLegalVault"
+cd "<repo-root>"
 docker compose ps
 Invoke-RestMethod http://localhost:8000/api/v1/health
 ```
@@ -226,7 +226,7 @@ Invoke-RestMethod http://localhost:8000/api/v1/health
 
 ### Screenshots to take as backup (during the rehearsal)
 
-Save in a folder `demo-backup\` (do not put it in the repo; use Desktop):
+Save in a folder `demo-backup` outside the repository:
 
 1. Login page.
 2. Dashboard as Authorized Staff, with the role badge visible.
@@ -283,7 +283,7 @@ Copy the exact V2 title first (you will type it below):
 **TYPE** (replace the title; it must match exactly, including punctuation):
 
 ```powershell
-cd "c:\Faizal\Block chain prj\GeoLegalVault"
+cd "<repo-root>"
 .\backend\.venv\Scripts\python.exe demo\tamper.py "Faculty Demo NDA"
 ```
 
@@ -298,7 +298,7 @@ cd "c:\Faizal\Block chain prj\GeoLegalVault"
 
 # Part 3 — Live demo in the browser
 
-**Login password for every demo user:** `Demo@Pass123!` (set by `scripts/seed.py`).
+**Login password for every demo user:** `<demo password>`: the `DEMO_PASSWORD` constant in `scripts/seed.py` on the presenter's machine, also printed by `python scripts/seed.py --demo`. Do not write it on slides.
 
 | Window | Email | Role label | Clearance |
 |---|---|---|---|
@@ -322,7 +322,7 @@ The server rejects readings with accuracy worse than **100 m** or older than **6
 ### Steps
 
 **1. CLICK / TYPE — Window A: Login.**
-Go to `http://localhost:5173/login`. Enter `authorized_staff@geolegalvault.demo` and `Demo@Pass123!`. Click **Sign in**.
+Go to `http://localhost:5173/login`. Enter `authorized_staff@geolegalvault.demo` and `<demo password>`. Click **Sign in**.
 **You should see:** the Dashboard, a "Welcome" headline, a "Location status" card, "Total documents" and "My drafts" tiles, and the role **"Authorized Staff"** in the top-right user menu.
 **SAY:** "Five roles, deny-by-default. I'm Authorized Staff. The sidebar only shows what this role may do."
 **Note:** the Dashboard may show an "anchor attention" banner about old stuck documents from your dev data (`DECISIONS.md` lists "Approval Demo" etc. as stuck). Only roles with anchor permissions see it. If Legal Officer sees it later, say "that's the alert for stuck anchors, a feature".
@@ -480,7 +480,7 @@ In Window A DevTools → Sensors → Location → Other… → Latitude `11.00`,
 ### Last resort — screenshots and saved output
 
 1. Stop fixing. Say: "I'll walk you through the run I did earlier. Every screen is from the real system."
-2. Open `Desktop\demo-backup\` and walk the 15 screenshots in order (list in Part 1).
+2. Open your `demo-backup` folder and walk the 15 screenshots in order (list in Part 1).
 3. Keep the **key three** ready: the **SHA-256 on Document Details**, the **Blockchain Anchor Record**, and the **MISMATCH** banner next to the **VERIFIED** banner.
 4. Show the test evidence as a fallback (no stack needed): `docs/TEST_PLAN.md` and the test files in `backend\tests\`. Do **not** run `pytest` live; I did not verify how long it takes or what it needs.
 5. State honestly that it's a recording. Do not present screenshots as live.
@@ -507,7 +507,7 @@ In Window A DevTools → Sensors → Location → Other… → Latitude `11.00`,
 | 12 | All timings | No timing is recorded in docs or logs for build, start, upload, approve or verify (except the 10-minute plan and the 3 in-request anchor attempts, 1 s apart). | Fill the table in Part 3. |
 | 13 | A real Sepolia run end to end | `CLAUDE.md` (Guardrail #10) lists this as "not exercised". | Rehearsal. |
 | 14 | Local-Hardhat mode as a demo path | Not documented for demos. It is used only by test code. The Etherscan link is hardcoded to Sepolia. I did not build steps for it because I'd be guessing. | Stay on Sepolia, or do not click the Etherscan link. |
-| 15 | `demo/tamper.py` | It's **untracked** (not committed) and I did not run it. It needs the same `.env` storage and Mongo settings. | One dry attempt on a rehearsal document. |
+| 15 | `demo/tamper.py` | It is tracked in git; I did not run it. It needs the same `.env` storage and Mongo settings. | One dry attempt on a rehearsal document. |
 | 16 | The `demo/latex` folder | Four `.tex` files (`nda_v1`, `nda_v2`, `service_agreement`, `board_resolution`). I did not open them. They look like source for demo documents, but I don't know if PDFs exist. | Use a small `.txt` unless you already have PDFs. |
 
 **Known behaviours from the docs, not bugs:** `anchor_worker: stale` in `/health` when the worker is off; old stuck dev documents from August may appear in the Dashboard alert for roles with anchor view (`DECISIONS.md`).
@@ -522,4 +522,4 @@ In Window A DevTools → Sensors → Location → Other… → Latitude `11.00`,
 4. **Sepolia is a public network.** It can be slow or rate-limited. Have one fully anchored V1+V2 document ready before you start, and begin the live part at the tamper step.
 5. **No timings exist.** Two full rehearsals are the only way to know if you fit in 10 minutes.
 
-**Tonight, in order:** (a) Part 1 Steps 1-9; (b) one full rehearsal with the screenshots; (c) fund the wallet if needed; (d) write your own times in the table; (e) copy `demo-backup\` to a USB stick or cloud folder.
+**Tonight, in order:** (a) Part 1 Steps 1-9; (b) one full rehearsal with the screenshots; (c) fund the wallet if needed; (d) write your own times in the table; (e) copy the `demo-backup` folder to a USB stick or cloud folder.

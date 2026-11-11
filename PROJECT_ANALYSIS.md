@@ -1,6 +1,6 @@
 # PROJECT_ANALYSIS.md — GeoLegalVault
 
-> **Snapshot, not current.** Written early in the project and not maintained since. Known stale statements, corrected in place below and in `docs/PROJECT_EXPLAINED.md` (2026-10-07): `CLAUDE.md` is **not** empty (it holds 13 guardrails); local dev and CI storage is **RustFS**, not MinIO (D-034); login rate limiting is **MongoDB-backed** (`login_rate_limits`), not in-memory (the separate global per-IP limiter is still in-memory); geofencing also covers **download** and the **anchor re-queue**; test counts are now 346 backend / 127 frontend / 10 contract cases. Other details (versions, file line numbers, counts) may also have drifted. `DECISIONS.md` and `CLAUDE.md` are authoritative.
+> **Snapshot, not current.** Written early in the project and not maintained since. Known stale statements, corrected in place below and in `docs/PROJECT_EXPLAINED.md` (2026-10-07): `CLAUDE.md` is **not** empty (it holds 13 guardrails); local dev and CI storage is **RustFS**, not MinIO (D-034); login rate limiting is **MongoDB-backed** (`login_rate_limits`), not in-memory (the separate global per-IP limiter is still in-memory); geofencing also covers **download** and the **anchor re-queue**; test counts are now 370 backend / 146 frontend / 9 contract cases (2026-11-11; the earlier "10" also counted a `.to.emit(` call). Other details (versions, file line numbers, counts) may also have drifted. `DECISIONS.md` and `CLAUDE.md` are authoritative.
 
 *Full from-scratch codebase analysis. Written as a persistent reference; paths are repo-relative unless stated otherwise.*
 
@@ -262,13 +262,13 @@ python scripts/seed.py --seed-documents         # synthetic corpus for DEMO_SCRI
 bash scripts/backup.sh
 ```
 
-Demo credentials (from `docs/info.md`, all share one password):
+Demo accounts (all share one password; it is not written here: it is the `DEMO_PASSWORD` constant in `scripts/seed.py`, printed by `python scripts/seed.py --demo` on the presenter's machine):
 ```
-legal_officer@geolegalvault.demo      → Demo@Pass123!
-authorized_staff@geolegalvault.demo   → Demo@Pass123!
-reviewing_officer@geolegalvault.demo  → Demo@Pass123!
-auditor@geolegalvault.demo            → Demo@Pass123!
-administrator@geolegalvault.demo      → Demo@Pass123!
+legal_officer@geolegalvault.demo      → <demo password>
+authorized_staff@geolegalvault.demo   → <demo password>
+reviewing_officer@geolegalvault.demo  → <demo password>
+auditor@geolegalvault.demo            → <demo password>
+administrator@geolegalvault.demo      → <demo password>
 ```
 
 ---
@@ -331,7 +331,7 @@ Expected: `{"status":"ok"|"degraded", "mongo":"reachable", "storage":"reachable"
 
 ### 5.2 Login / auth
 1. Open http://localhost:5173/login.
-2. Log in as `legal_officer@geolegalvault.demo` / `Demo@Pass123!`.
+2. Log in as `legal_officer@geolegalvault.demo` / `<demo password>` (see the demo accounts note above).
    - Expected: redirected to Dashboard; JWT stored (check `frontend/src/lib/authToken.ts` storage location); nav shows only permissions the Legal Officer role has (Upload, Documents, Verify, Amend, Archive — not Admin or Audit).
 3. Log out, then attempt to visit `/admin` directly while logged out.
    - Expected: redirected to `/login` (ProtectedRoute).

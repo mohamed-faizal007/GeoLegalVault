@@ -25,7 +25,9 @@ but that refresh itself eventually expires too.
   with your reported coordinates and GPS accuracy. Check this *before* trying an
   upload/approve/amend if one of those unexpectedly gets blocked — a red/absent badge here
   is why.
-- **Settings** — change your own password.
+- **Settings** — shows a change-password form, but it cannot be submitted: the backend has no
+  password-change endpoint yet (PRODUCTION_READINESS.md SEC-01). Passwords are set by an
+  Administrator when the account is created.
 
 ## Legal Officer
 
@@ -62,12 +64,14 @@ Officer, minus approval (someone else, a Legal Officer, must approve what you su
 
 ## Auditor
 
-Read-only everywhere, plus the one page nobody else sees:
+Read-only, plus the Audit Logs page (which only Auditors and Administrators can open):
 
 - **Audit Logs** — every security-relevant action in the system: who did what, to what,
   when, from where, and whether it succeeded — including geofence denials and failed
-  verifications. Filter by actor, action, result, or date range.
-- Can also browse the Document Repository and run Verify, but cannot upload, submit,
+  verifications. Filter by actor, action, result, or date range. Rows about a document above
+  your clearance are still listed, but their details are hidden ("details hidden").
+- Can also browse the Document Repository and run Verify for documents at or below your
+  clearance (a document above it behaves as if it does not exist), but cannot upload, submit,
   review, approve, amend, or archive anything.
 
 ## Administrator
@@ -79,12 +83,13 @@ maker/checker exists to prevent).
 - **Admin Panel** — tabs for Users, Geofences, Reports, and System Health.
   - **Users:** create accounts, assign a role and one or more geofences, deactivate an
     account (accounts are never hard-deleted, even after deactivation).
-  - **Geofences:** define named zones as a polygon on a map (or paste GeoJSON). A zone can
-    be deactivated but not deleted once it's ever been assigned to anyone.
+  - **Geofences:** define named zones by pasting the polygon's points as `[longitude, latitude]`
+    pairs (there is no map widget). The form shows the zone's approximate centre as text and asks
+    you to confirm it is the intended place. A zone can be deactivated but never deleted.
   - **Reports:** aggregate counts — documents by status/type, how many anchor attempts
     succeeded vs. failed, recent verification pass/fail counts, geofence-denial counts.
   - **System Health:** the same reachability check (`/health`) shown as a page.
-- Can also archive an ACTIVE/SUPERSEDED document (hides it from the default repository
+- Can also archive an ACTIVE document (only ACTIVE documents can be archived; it is hidden from the default repository
   view; every version and anchor stays intact and still verifiable via an explicit
   "show archived" filter).
 
@@ -94,7 +99,10 @@ maker/checker exists to prevent).
 |---|---|
 | 🟢 **VERIFIED** | The file's current bytes hash to exactly the value recorded at upload *and* the value anchored on-chain. Nothing has changed since it was approved. |
 | 🔴 **MISMATCH — tamper detected** | The file's current bytes do **not** match. Something changed the stored file (or someone tried to also change the database record to cover it up — Verify still catches this because it also checks against the immutable on-chain hash, not just the database). The document is automatically flagged. |
-| ⚪ **NOT ANCHORED YET** | This version hasn't been approved/anchored yet — not an error, just not eligible for the full 3-way check yet. Its recomputed hash is still compared against the stored one. |
+| ⚪ **NOT ANCHORED YET** | Our records do not show this version as anchored (for example a draft) — not an error, just not eligible for the full 3-way check yet. Its recomputed hash is still compared against the stored one. |
+| 🔴 **ANCHOR MISSING** | Our records say this version was anchored, but the blockchain has no matching entry (for example after a test-network reset). Integrity could not be confirmed; the document is flagged `UNCONFIRMED` for an administrator. This is not proof of tampering. |
+| 🔴 **STORED FILE MISSING** | The stored file for this version was not found, so it could not be checked. The document is flagged `UNCONFIRMED` for an administrator. |
+| 🟠 **COULD NOT CHECK THE BLOCKCHAIN** | The blockchain could not be read (network or provider problem), so there is no result: the version was neither confirmed nor flagged. Try again later. |
 
 A **red MISMATCH does not mean the platform failed** — it means the platform *caught*
 something it's specifically designed to catch. That's the point of the whole system.

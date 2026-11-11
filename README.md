@@ -5,7 +5,7 @@ Geospatially-aware document integrity & lifecycle platform. See `docs/GeoLegalVa
 
 All 12 phases are implemented: auth/RBAC, geofence enforcement, storage/hashing/versioning,
 smart-contract anchoring on Sepolia, the full lifecycle workflow, the 3-way tamper-detection
-verification loop, audit logging, the full frontend, admin/reporting, a test suite with CI (346 backend, 127 frontend, 10 contract cases as of 2026-10-07),
+verification loop, audit logging, the full frontend, admin/reporting, a test suite with CI (370 backend, 146 frontend, 9 contract cases as of 2026-11-11; see `docs/TEST_PLAN.md`),
 and deployment docs. See `docs/` for the full documentation set — start with `docs/SRS.md` (what
 it does), `docs/DEMO_SCRIPT.md` (see it work), `docs/DEPLOYMENT.md` (ship it), and
 `docs/DEVELOPER_GUIDE.md` (work on it).
@@ -15,7 +15,7 @@ it does), `docs/DEMO_SCRIPT.md` (see it work), `docs/DEPLOYMENT.md` (ship it), a
 The five demo users (`legal_officer@geolegalvault.demo`, `authorized_staff@geolegalvault.demo`,
 `reviewing_officer@geolegalvault.demo`, `auditor@geolegalvault.demo`, `administrator@geolegalvault.demo`)
 share one demo password. It is not written in this README. It is the `DEMO_PASSWORD` constant in
-`scripts/seed.py` (created by `python scripts/seed.py --demo`) and is also given in `docs/DEMO_SCRIPT.md`.
+`scripts/seed.py` (created and printed by `python scripts/seed.py --demo`); no document in the repository repeats it.
 Do not reuse it anywhere real.
 
 ## Prerequisites
@@ -41,8 +41,8 @@ Edit `.env` and fill in real values before deploying anywhere beyond local dev. 
 docker-compose up
 ```
 
-This starts MongoDB, RustFS (S3-compatible object storage; MinIO's images are gone, see DECISIONS.md D-034), a placeholder Hardhat node service
-(implemented in Phase 5), and the FastAPI backend. Once it's up:
+This starts MongoDB, RustFS (S3-compatible object storage; MinIO's images are gone, see DECISIONS.md D-034), a placeholder `hardhat-node`
+container (it only keeps port 8545 open for `/health`; it is not a blockchain, see `docs/DEVELOPER_GUIDE.md`), and the FastAPI backend. Once it's up:
 
 ```bash
 curl http://localhost:8000/api/v1/health
@@ -70,7 +70,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 — it calls the backend's `/api/v1/health` and renders the JSON response.
+Open http://localhost:5173 and sign in (create the demo users first with `python scripts/seed.py --demo`; see "Demo accounts" above).
 
 ## Project layout
 

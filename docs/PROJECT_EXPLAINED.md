@@ -2,6 +2,8 @@
 
 *Written 2026-10-07 for a faculty presentation. Every statement is taken from the code or from `DECISIONS.md` as they stand at commit `e9f7870`. Where something is not in the code it says "not used". Where a claim is only partly true it says so. The dev database and the real `.env` values were not read or printed.*
 
+*Updated 2026-11-11 (docs-only corrections against the code at commit `9c8a8f4`): the pymongo advisory is resolved (Motor 3.7.1, PyMongo 4.18.3); there are 9 contract test cases, not 10; `docs/DEMO_SCRIPT.md` already uses the correct role order (D-053); the explorer link appears only when `CHAIN_ID` is Sepolia (D-057); `demo/` is tracked in git; test counts in section 8 are refreshed. See `docs/complete info about project.md` Appendix A.*
+
 **How to read the evidence tags.** `path::name` points at a file and function. `D-0xx` is an entry in `DECISIONS.md`. `SEC-xx / REL-xx / OPS-xx / CMP-xx` are findings in `PRODUCTION_READINESS.md`. "Guardrail #n" is a rule in `CLAUDE.md`.
 
 ---
@@ -117,7 +119,7 @@ Read from `Depends(require_geofence(...))` in the routers:
 | Request an amendment (`POST /documents/{id}/amend`) | Archive, Verify, clear an integrity flag (D-025: "administrative integrity action") |
 | Administrator re-queue of a stuck anchor (`POST /blockchain/anchors/{id}/retry`) | User, geofence, audit and report administration |
 
-Two documents say less than the code does. `CLAUDE.md` #5 and `PROJECT_ANALYSIS.md` name upload, approve and amend only; the code also geofences **download** and the **anchor re-queue**.
+`CLAUDE.md` #5 and `PROJECT_ANALYSIS.md` list all five geofenced operations, including **download** and the **anchor re-queue** (corrected in D-053).
 
 ### 3.4 The geofence model
 
@@ -208,7 +210,7 @@ From `ROLE_PERMISSIONS` in `core/rbac.py`. Clearance values are the **seed defau
 | **Auditor** (`auditor@…`) | View, search, verify, **read the audit log**, see stuck-anchor list. Read-only everywhere | Change any document or user; geofence admin | RESTRICTED |
 | **Administrator** (`administrator@…`) | Manage users (role, fences, clearance), manage geofences, view audit, archive, clear an integrity flag, view and **re-queue** stuck anchors, view/verify documents | Upload, submit, review, approve, amend (separation of duties, `rbac.py` comment); read a document above their own clearance | INTERNAL |
 
-Facts worth stating: the **demo has exactly one Legal Officer**, so if that person uploads a document, nobody else can approve it. Run the main demo with Authorized Staff as the uploader. Passwords: the demo password is printed by `scripts/seed.py --demo` and written in `docs/DEMO_SCRIPT.md`; it is not in `README.md` despite the usual convention. None is reproduced here.
+Facts worth stating: the **demo has exactly one Legal Officer**, so if that person uploads a document, nobody else can approve it. Run the main demo with Authorized Staff as the uploader. Passwords: the demo password is the `DEMO_PASSWORD` constant in `scripts/seed.py` and is printed by `scripts/seed.py --demo`; no document repeats it. None is reproduced here.
 
 ### 4.4 Clearance (SEC-02, D-051, D-052, Guardrail #13)
 
@@ -325,11 +327,10 @@ Before D-049, any error reading the chain was silently turned into "no anchor", 
 
 | Area | Number | How I got it | Fresh or recorded |
 |---|---|---|---|
-| **Backend tests** | **346** | `pytest --collect-only` on `backend/` (no database touched; nothing was run against the dev DB or Docker) | **Fresh count of tests that exist.** |
-| Backend last full run | 346 passed, 0 failed, **94.27 %** coverage (gate: 60 %), on Windows with CI's five variables only | `DECISIONS.md` D-052 verification | **Recorded, not fresh.** I did not re-run the suite: it needs Mongo, storage and a local Hardhat node and takes 6 to 8 minutes, so it cannot be run without touching Docker. |
-| **Frontend tests** | **127 tests in 21 files, all passed** (about 104 s) | `npx vitest run` in `frontend/` (the tests use mocked API calls and need no database) | **Fresh.** Matches D-052. |
-| **Contract tests** | 10 test cases in one file | Counted `it(` in `contracts/test/DocumentAnchor.test.ts` | Static count, **not run** here. CI runs it. |
-| Test files in backend | 37 | file count under `backend/tests` | Fresh |
+| **Backend tests** | **370 passed, 0 failed, 94.07 %** coverage (gate: 60 %) | full `pytest` run on 2026-11-11 from a clean checkout without `.env`, against throwaway Mongo and RustFS containers and a local Hardhat node | Fresh (2026-11-11) |
+| **Frontend tests** | **146 tests in 23 files**; three runs gave 6, 0 and 2 failures, in timing-sensitive tests | `npx vitest run` in `frontend/` (the tests use mocked API calls and need no database) | Fresh (2026-11-11) |
+| **Contract tests** | **9 test cases**, all passing | `npx hardhat test` | Fresh (2026-11-11). An earlier count of 10 also counted the `.to.emit(` call. |
+| Test files in backend | 38 `test_*.py` files (7 unit, 15 API, 16 integration) | `git ls-files backend/tests` | Fresh (2026-11-11) |
 
 Test styles: unit (hashing, geofence maths, clearance, security primitives), API (authorisation matrix of role by endpoint, geofence, audit, anchor error exposure), integration against a **real** MongoDB, a real S3-compatible store and a **real local Hardhat chain** (no mocking of the three core services), including a Hardhat node killed and restarted mid-anchor and two workers racing as two OS processes.
 
@@ -341,7 +342,7 @@ Test styles: unit (hashing, geofence maths, clearance, security primitives), API
 | `contracts` | `npx hardhat test` |
 | `frontend` | `npm audit` (production, high), `eslint`, `vitest`, `vite build` |
 
-**What the CI failure on pymongo means.** I read the latest run with `gh run view` (read-only). Run `37458277076`, on `main` for commit `e9f7870` ("CLAUDE.md: add guardrail #13…"), failed in the `backend` job at the step **"Dependency audit"**. `pip-audit` reported **4 known vulnerabilities in `pymongo 4.9.2`**: `CVE-2026-88029` (fixed in 4.18.1) and `CVE-2026-96747`, `-96748`, `-96749` (fixed in 4.18.2). The `contracts` and `frontend` jobs passed; the `pytest` step was **skipped** in that run because the audit gate failed first, so that run says nothing about whether the tests pass. In plain terms: a security advisory was published for a library we depend on, and our own rule (fail the build on a known vulnerability) tripped. It is not a bug introduced by the latest commit. Why it is not a one-line fix: `pymongo` is not in `requirements.txt`; it is pulled in by `motor==3.6.0`, which requires `pymongo>=4.9,<4.10`, so reaching 4.18.x means upgrading or replacing Motor. The app also imports `pymongo` directly (`ReturnDocument`, `DuplicateKeyError`). I did not read the advisories and cannot say whether they are exploitable in this configuration.
+**Resolved since this was written:** commit `9c8a8f4` pins `motor==3.7.1` and `pymongo==4.18.3`, and `pip-audit -r requirements.txt --no-deps` reports no known vulnerabilities (run 2026-11-11). The paragraph below is kept as the record of the failure. **What the CI failure on pymongo meant.** I read the latest run with `gh run view` (read-only). Run `37458277076`, on `main` for commit `e9f7870` ("CLAUDE.md: add guardrail #13…"), failed in the `backend` job at the step **"Dependency audit"**. `pip-audit` reported **4 known vulnerabilities in `pymongo 4.9.2`**: `CVE-2026-88029` (fixed in 4.18.1) and `CVE-2026-96747`, `-96748`, `-96749` (fixed in 4.18.2). The `contracts` and `frontend` jobs passed; the `pytest` step was **skipped** in that run because the audit gate failed first, so that run says nothing about whether the tests pass. In plain terms: a security advisory was published for a library we depend on, and our own rule (fail the build on a known vulnerability) tripped. It is not a bug introduced by the latest commit. Why it is not a one-line fix: `pymongo` is not in `requirements.txt`; it is pulled in by `motor==3.6.0`, which requires `pymongo>=4.9,<4.10`, so reaching 4.18.x means upgrading or replacing Motor. The app also imports `pymongo` directly (`ReturnDocument`, `DuplicateKeyError`). I did not read the advisories and cannot say whether they are exploitable in this configuration.
 
 ---
 
@@ -353,7 +354,7 @@ Test styles: unit (hashing, geofence maths, clearance, security primitives), API
 
 | Item | State |
 |---|---|
-| **pymongo advisories / Motor upgrade** | Open. CI is red on `main` because of it (section 8). |
+| **pymongo advisories / Motor upgrade** | Resolved by commit `9c8a8f4` (Motor 3.7.1, PyMongo 4.18.3; section 8). |
 | **SEC-03** account lock-out abuse | Open. The 5-per-minute counter is keyed by email only, so anyone can keep a named account (including the administrator) locked out. No fix in `DECISIONS.md`. |
 | **SEC-01** password change or reset, and MFA | Open. No endpoint changes a password; the Settings form is a dead end. The administrator sets every password. |
 | **OPS-01** backup and restore | Open. Backup covers MongoDB only, with no restore script and no object-storage backup. Because versions are immutable, a lost file cannot be rebuilt (only its hash survives on-chain). |
@@ -373,7 +374,7 @@ Test styles: unit (hashing, geofence maths, clearance, security primitives), API
 
 Use `DEMO_RUNBOOK.md` for set-up and recovery (it covers the port clash with another project, a preflight for the chain settings, and a rehearsal checklist). **Passwords: use the shared demo password (see 4.3); none is written here.** Use three browser windows, one per role, and log in fresh just before starting (access tokens last 15 minutes).
 
-**Do not follow `docs/DEMO_SCRIPT.md`'s role order.** It has the Legal Officer upload and also approve, which the server forbids (`MAKER_CHECKER_VIOLATION`). Use this order instead.
+Use this role order (`docs/DEMO_SCRIPT.md` uses the same one since D-053): the uploader can never approve their own upload (`MAKER_CHECKER_VIOLATION`).
 
 | Min | Window / role | Action | Say (and point at) |
 |---|---|---|---|
@@ -382,10 +383,10 @@ Use `DEMO_RUNBOOK.md` for set-up and recovery (it covers the port clash with ano
 | 2:00 | Staff | Upload a small text or PDF file, classification **CONFIDENTIAL** or lower. | Show status `DRAFT` and the SHA-256. "File in private storage under a server-made key. Only the fingerprint goes to the blockchain, never the file or its name." Click **Submit**. |
 | 3:00 | Reviewer | Log in as **Reviewing Officer**. Open the document, **Review → Approve review**. | "The checker confirms the content. Not the blockchain step." |
 | 3:45 | Legal | Log in as **Legal Officer**. Open it, **Approve**. | "There is no anchor button. Approval triggers it, and the backend's own wallet signs, never the user." Wait for `ACTIVE`. |
-| 4:45 | Legal | Version history, **View on-chain**. Open Etherscan **only if running on real Sepolia** (the link is hard-coded to Sepolia). | "Public, independent of our database. It holds a hash, not the file." |
+| 4:45 | Legal | Version history, **View on-chain**. Open Etherscan **only if running on real Sepolia** (the API returns an explorer link only when `CHAIN_ID` is Sepolia, D-057). | "Public, independent of our database. It holds a hash, not the file." |
 | 5:30 | Legal | **Negative case 2: uploader cannot approve.** On a *second*, throw-away document uploaded by the Legal Officer and reviewed by the reviewer, show that Approve is missing for the uploader. | "The server also refuses it with `MAKER_CHECKER_VIOLATION`." (The unit test is `tests/api/test_rbac.py`.) |
 | 6:15 | Admin | **Negative case 3: low clearance.** Log in as **Administrator** (seed clearance INTERNAL). Open the repository, then the first document's link directly. | "It is not in the list, and opening it says 'not found', the same as a document that never existed. Not 'forbidden'." Re-check the stored clearances in rehearsal, since the seed values are defaults. |
-| 7:15 | Terminal | **Negative case 4: tamper.** Run `python demo/tamper.py "<exact title>"` on **this demo document only** (it changes one byte in storage, as someone with storage access could; the file is untracked in git). | "This bypasses the application on purpose." |
+| 7:15 | Terminal | **Negative case 4: tamper.** Run `python demo/tamper.py "<exact title>"` on **this demo document only** (it changes one byte in storage, as someone with storage access could; the file is tracked in git). | "This bypasses the application on purpose." |
 | 8:00 | Auditor or Legal | Document → **Verify** | Expect red **MISMATCH**; three hashes shown, recomputed differs. Say: "It does not prevent the change. It makes it evident." |
 | 9:00 | Auditor | **Audit log** | Show `GEOFENCE_DENIED`, `APPROVE`, `ANCHOR_OK`, `VERIFY_FAIL`. Close with the limits: location is spoofable, one wallet signs, test network only, audit log not yet hash-chained. |
 
@@ -397,7 +398,7 @@ Positive cases covered: in-fence upload, review, approve, anchor, on-chain read.
 - `python scripts/seed.py --seed-documents` (sends many real blockchain transactions and spends test coin).
 - `docker compose --profile worker up` (starts the signer, may re-send old stuck anchors).
 - `docker compose down -v`, `docker volume prune`, `docker system prune` (deletes users, fences and anchored documents).
-- `git clean` (would delete the untracked `demo/tamper.py`).
+- `git clean -x` (would delete git-ignored local files the demo relies on, such as `.env`).
 - Running `tamper.py` on any document you still need: it flags the document `TAMPERED` and only an administrator can clear that, after the bytes are restored (D-025).
 - The administrator "re-queue" on the old stuck documents; the Etherscan click on a local chain.
 - Anything needing internet that you have not rehearsed (Sepolia can be slow or rate-limited).
@@ -416,7 +417,7 @@ Positive cases covered: in-fence upload, review, approve, anchor, on-chain read.
 8. **Can the admin read every document?** No. The Administrator has no automatic content access: they need clearance like anyone else and have no upload or approve rights. They can set clearances (not their own). An admin with database or storage access could still read everything outside the app; clearance is not encryption.
 9. **How does it scale?** Not proven. It is a single FastAPI app plus one optional worker, prototype-sized, never load-tested (OPS-03). Known scale limits: the global rate limiter is per process, storage calls are synchronous (REL-05), and the anchor nonce lock is per process. Anchoring is one small transaction per approval.
 10. **What is the biggest limitation?** That the location and the signer are both trust points: location is claimed by the client, and one server key signs every anchor. A second one: what the chain protects is the file bytes only.
-11. **What would you do next?** Password change and MFA (SEC-01), the Motor/pymongo upgrade, backup and restore including file storage (OPS-01), a hash-chained audit log (CMP-01), per-matter access, then malware scanning.
+11. **What would you do next?** Password change and MFA (SEC-01), backup and restore including file storage (OPS-01), a hash-chained audit log (CMP-01), per-matter access, then malware scanning.
 12. **Why is the uploader not allowed to approve?** Separation of duties: one person alone cannot create and legitimise a document. The server enforces it (`enforce_maker_checker`), not just the UI.
 13. **Why does a hidden document return "not found" instead of "forbidden"?** "Forbidden" would reveal that the document exists. Same status and body for both cases (Guardrail #13).
 14. **What exactly goes on the blockchain?** Document id (a database id, not a name), version number, the 32-byte hash, an event code, and the block time. No file, no filename, no personal data (Guardrail #1).
@@ -429,7 +430,7 @@ Positive cases covered: in-fence upload, review, approve, anchor, on-chain read.
 21. **Why a polygon rather than a radius?** A polygon fits real building footprints and is what the database's geospatial index answers natively. `radius_m` exists in the schema but is not used for the decision.
 22. **Can one user work from several sites?** Yes: assign several fences to the user; being inside any one active fence is enough.
 23. **What stops two people approving at the same moment?** An atomic compare-and-swap on the document's status: exactly one wins (D-023).
-24. **What is the CI failure about?** A newly published security advisory on `pymongo` (pulled in by Motor) tripped the dependency-audit gate on 2026-10-06. It is a known open item, not a regression (section 8).
+24. **What was the CI failure about?** A newly published security advisory on `pymongo` (pulled in by Motor) tripped the dependency-audit gate on 2026-10-06. It was resolved by upgrading to Motor 3.7.1 and PyMongo 4.18.3 (commit `9c8a8f4`, section 8).
 
 ### The three hardest, and how to answer
 

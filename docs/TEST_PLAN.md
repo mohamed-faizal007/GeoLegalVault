@@ -19,14 +19,16 @@ over the network rather than to mocks of them. This is a deliberate choice: the 
 parts of this system (the 3-way hash comparison, the anchor/confirm/promote sequence) are
 exactly the parts a mock would be most likely to over-simplify.
 
-## Current results (updated 2026-10-07; first written at Phase 12)
+## Current results (updated 2026-11-11; first written at Phase 12)
 
 ```
-backend:    346 tests, 94.27% line coverage (gate: 60%)  [last recorded full run, DECISIONS.md D-052;
-            346 re-counted with `pytest --collect-only` on 2026-10-07, suite not re-run that day]
-contracts:  10 Hardhat test cases (anchor / re-anchor-reverts / onlyWriter / getAnchor / setWriter)  [counted, 2026-10-07]
-frontend:   127 Vitest tests in 21 files, all passing  [run 2026-10-07]
+backend:    370 tests, all passing, 94.07% line coverage (gate: 60%)  [full run 2026-11-11, clean checkout without .env]
+contracts:  9 Hardhat test cases, all passing (anchor / event / never-anchored read / re-anchor reverts /
+            second version / non-writer refused / grant writer / revoke writer / owner-only setWriter)  [run 2026-11-11]
+frontend:   146 Vitest tests in 23 files  [run 2026-11-11: three runs gave 6, 0 and 2 failures;
+            the failures are timing-sensitive tests, not a stable defect]
 ```
+The earlier figure of 10 contract cases also counted the `.to.emit(` call; there are 9 `it(...)` cases.
 Reproduce locally:
 ```bash
 cd backend && pytest                 # coverage report printed, gate enforced via pyproject.toml

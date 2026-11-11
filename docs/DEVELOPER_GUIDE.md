@@ -93,7 +93,7 @@ Until you do one of the two paths below:
 - Anchors on Sepolia are unaffected; they hold only hashes.
 
 Neither path below deletes anything, and neither touches the old volume
-`geolegalvault_minio_data` or `C:\Faizal\docker-backups\minio-images.tar`. PowerShell, from the repo root.
+`geolegalvault_minio_data` or any saved copy of the old MinIO images. PowerShell, from the repo root.
 
 ### Path A — copy the old objects across (keeps your Mongo data)
 

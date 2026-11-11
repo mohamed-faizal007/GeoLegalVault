@@ -3,8 +3,8 @@
 Run this exact sequence (Plan Part 34) against the deployed stack (or `docker-compose up`
 locally with a real Sepolia contract configured — the anchoring steps need a real chain).
 Seed the demo data first: `python scripts/seed.py --demo && python scripts/seed.py
---seed-documents` (see `DEPLOYMENT.md` step 4). Demo credentials (all password
-`Demo@Pass123!`): `authorized_staff@geolegalvault.demo`, `reviewing_officer@…`,
+--seed-documents` (see `DEPLOYMENT.md` step 4). Demo credentials (one shared password, `<demo password>`:
+the `DEMO_PASSWORD` constant in `scripts/seed.py` on the presenter's machine, also printed by `python scripts/seed.py --demo`): `authorized_staff@geolegalvault.demo`, `reviewing_officer@…`,
 `legal_officer@…`, `auditor@…`, `administrator@…`.
 
 **Role order (maker-checker).** The uploader of a version can never review or approve it

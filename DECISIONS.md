@@ -548,7 +548,7 @@ server read an arbitrarily large body (no cap anywhere). Also the geofence depen
    repo; keep as defence in depth, not as the control.
 4. *Stream straight to storage*: the SHA-256 and MIME sniff need the bytes; this is the REL-05 redesign. Out of
    scope.
-**Decision:** (2). A pure-ASGI middleware (outermost) enforces a per-route cap:
+**Decision:** (2). A pure-ASGI middleware (outermost; *note 2026-11-11: as built, `main.py` places it inside CORS, the security headers and the rate limiter, and outside the request logger*) enforces a per-route cap:
 `POST /api/v1/documents` → `MAX_UPLOAD_MB` MiB + 1 MiB multipart overhead; every other request →
 `MAX_JSON_BODY_KB` (default 1024). (i) `Content-Length` present and over the cap → `413 PAYLOAD_TOO_LARGE`
 before any read; non-numeric → 400. (ii) Otherwise bytes are counted as `receive()` delivers them; on crossing

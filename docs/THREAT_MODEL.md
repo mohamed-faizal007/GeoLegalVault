@@ -10,12 +10,12 @@ guarantee.** Nothing here or anywhere else in the codebase claims "military-grad
 
 | Asset | Why it matters | Where it lives |
 |---|---|---|
-| Document bytes | Confidential content (contracts, NDAs, memos) | Cloudflare R2 / MinIO — private bucket, never on-chain |
+| Document bytes | Confidential content (contracts, NDAs, memos) | Cloudflare R2 (production) / RustFS (local dev and CI) — private bucket, never on-chain |
 | Document metadata + version lineage | Provenance, chain of custody | MongoDB (`documents`, `document_versions`) |
 | SHA-256 anchors | The externally-verifiable integrity proof | Sepolia (`DocumentAnchor` contract) + `blockchain_anchors` |
 | User credentials | Account takeover surface | `users.password_hash` (Argon2id) |
 | Service-wallet private key | Controls all future anchoring | Backend env/secret store only |
-| Audit log | Independent record of who did what, where | `audit_logs` (append-only) |
+| Audit log | Independent record of who did what, where | `audit_logs` (append-only by convention: no update or delete path in the application) |
 | JWT access/refresh tokens | Session identity | In-memory (frontend) / httpOnly cookie |
 
 ## Threat table (STRIDE-adjacent, Plan Part 14)
@@ -30,19 +30,19 @@ Format: **Threat → Impact → Likelihood → Mitigation → Residual risk.**
 | 4 | Privilege escalation | Unauthorized ops | Med | Deny-by-default RBAC (`core/rbac.py`); role is read fresh from the DB user on every request, not trusted from JWT claims alone | Low |
 | 5 | IDOR (guessed document/version IDs) | Data exposure | Med | Every read/write re-checks the caller's role permission and (for sensitive ops) geofence, **and, since SEC-02 / D-051, that the caller's clearance reaches the document's classification**: one loader (`documents/access.py`) used by every route that takes a document or version id, a test that enumerates those routes, a hidden document answered with the same 404 as a nonexistent one, and lists/search/counts/reports filtered by clearance. This is application-level access control, not encryption: it does not protect against someone with database or storage access, and it is not a matter / ethical-wall model (still open). ObjectIds are not sequential/guessable | Low |
 | 6 | Broken access control | Wide exposure | Med | Central `require(permission)` dependency on every protected route; authz-matrix test (`tests/api/test_authz_matrix.py`) asserts allow/deny per role × endpoint | Low |
-| 7 | Malicious file upload | Malware distribution | Med | Size cap, content-type allow-list, magic-byte detection cross-checked against the claimed type (`modules/documents/service.py::validate_upload`); files are never served inline, only via pre-signed download | Med — no ClamAV scan (cut per the plan's priority list; MIME/magic validation only) |
+| 7 | Malicious file upload | Malware distribution | Med | Size cap, content-type allow-list, magic-byte detection cross-checked against the claimed type (`modules/documents/service.py::validate_upload`); files are delivered only through short-lived pre-signed download URLs and the API never streams them; the URLs set no `Content-Disposition`, so a browser may still display a file inline (PRODUCTION_READINESS.md SEC-18) | Med — no ClamAV scan (cut per the plan's priority list; MIME/magic validation only) |
 | 8 | Path traversal in storage keys | Overwrite/leak | Low | Storage key is always server-generated and content-addressed (`docs/{document_id}/v{n}-{sha256}`) — the client's filename is never used as a path, and an upload can never overwrite a stored object with different bytes | Low |
 | 9 | Object-storage misconfiguration (public bucket) | Mass leak | Med | Bucket is private; the only egress path is a short-lived pre-signed GET URL (`STORAGE_PRESIGN_TTL_SEC`, default 60 s); the API never proxies bytes | Low |
 | 10 | NoSQL injection | Data leak/bypass | Med | All queries built via Motor's typed filter dicts from validated Pydantic input — no string-built queries, no `$where`, no raw user JSON passed into a filter | Low |
 | 11 | API abuse / brute force | DoS, credential stuffing | Med | Global per-IP rate limit (`core/rate_limit.py`, default 120 req/min) plus the auth module's own tighter per-email limit | Med — in-memory, per-process (see Limitation below) |
-| 12 | Replay attacks | Repeated ops | Low | HTTPS in every non-local deployment; geofence checks include a freshness window (`GEO_FRESHNESS_MAX_SEC`); the contract rejects re-anchoring the same (doc, version) | Low |
+| 12 | Replay attacks | Repeated ops | Low | HTTPS in every non-local deployment; geofence checks reject a location reading older than `GEO_FRESHNESS_MAX_SEC`; the contract rejects re-anchoring the same (doc, version) | Low for anchoring. For location: only *old* timestamps are rejected; a future-dated timestamp is accepted, so a captured set of location headers does not expire (SEC-12, open) |
 | 13 | Blockchain service-key compromise | False anchors | Low | Key lives only in platform secret storage (Render env), never in git/frontend/logs; wallet holds only faucet ETH; Verify cross-checks recomputed vs. stored vs. on-chain, so a single false anchor alone can't produce a false VERIFIED for an existing document | Med |
 | 14 | GPS spoofing | Geofence bypass | High | Fail-closed on low accuracy / stale timestamp (422); server never trusts a client "inside" flag — **acknowledged prototype limitation, see below** | **High (accepted)** |
 | 15 | Geofence bypass via a client-supplied flag | Bypass | Med | The server independently runs the `$geoIntersects` query on every sensitive request; no endpoint reads a client "allowed" field at all | Low |
-| 16 | DB tampering (admin/insider) | Silent alteration | Med | An altered file (or an altered stored hash) fails the next Verify against the immutable on-chain hash; `audit_logs` is append-only | Low (detectable, not prevented) |
+| 16 | DB tampering (admin/insider) | Silent alteration | Med | An altered file (or an altered stored hash) fails the next Verify against the immutable on-chain hash. `audit_logs` has no update or delete path in the application, but it is an ordinary collection: someone with database access can change it without detection (CMP-01) | Low for file bytes (detectable, not prevented). Statuses, approvals, ownership, clearance and audit rows are not covered (CMP-04) |
 | 17 | Cloud account compromise | Broad | Low | Least-privilege scoped keys per Deployment guide (R2 token, Atlas user); out of this codebase's control otherwise | Med |
 | 18 | Insider threat | Misuse | Med | Maker-checker separation (`enforce_maker_checker`: approver ≠ uploader), Auditor is read-only everywhere and sees everything | Med |
-| 19 | Audit log manipulation | Cover tracks | Med | Append-only collection, no update/delete API path anywhere in `modules/audit` | Low-Med — no periodic hash-chaining of log batches (optional hardening, not implemented) |
+| 19 | Audit log manipulation | Cover tracks | Med | No update or delete function or API path anywhere in `modules/audit` (append-only by convention only; the collection sits under the application's own database credentials) | Med — rows carry no integrity field of any kind, so anyone with database access can alter or delete history and nothing shows it (PRODUCTION_READINESS.md CMP-01, open) |
 | 20 | Secrets in git | Full compromise | Med | `.gitignore` excludes `.env`/`.env.*`; only `.env.example` (placeholders) is committed; `APP_ENV != development` fails startup if any required secret is still a placeholder | Low |
 
 ## Cross-cutting controls
@@ -63,9 +63,12 @@ HSTS outside local dev) are set on every response (`core/security_headers.py`).
    The system does not attempt hardware GPS attestation (explicitly out of scope). Geofencing
    here is **defense-in-depth policy**, not an anti-spoof control — say so in every report,
    viva, and demo slide.
-2. **In-memory rate limiting is per-process.** With multiple gunicorn workers or multiple
-   deployed instances, an attacker distributing requests across workers/instances sees a
-   higher effective limit than the configured number. A production deployment beyond
+2. **The global rate limiter is in-memory and per-process.** The login limiter (5 failures
+   per email per 60 s) is stored in MongoDB and shared by every instance; the separate global
+   per-IP limiter (`core/rate_limit.py`, 120 requests/min) is not. With multiple gunicorn
+   workers or deployed instances, an attacker distributing requests across them sees a
+   higher effective global limit than the configured number; it also trusts the first
+   `X-Forwarded-For` value (SEC-10). A production deployment beyond
    prototype scale would need a shared store (Redis) instead.
 2b. **Malware scanning is not implemented.** Upload validation is MIME + magic-byte +
    size only; a well-formed malicious PDF/DOCX would pass. ClamAV integration is a named
